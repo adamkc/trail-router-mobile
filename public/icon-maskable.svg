@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Maskable: fill entire square with blaze; Android crops to adaptive shape (circle, squircle, etc.) -->
+  <rect width="512" height="512" fill="oklch(0.72 0.17 55)"/>
+  <!-- Trail glyph centered in the safe zone (inner ~80% per W3C maskable spec) -->
+  <g transform="translate(0, 16)">
+    <g fill="none" stroke="#1A1208" stroke-width="4" opacity="0.18">
+      <path d="M 60 300 Q 150 240 240 280 T 452 260"/>
+      <path d="M 60 340 Q 150 280 240 320 T 452 300"/>
+      <path d="M 60 380 Q 150 320 240 360 T 452 340"/>
+    </g>
+    <path
+      d="M 96 385 L 190 252 L 256 326 L 325 180 L 416 385 Z"
+      fill="none"
+      stroke="#1A1208"
+      stroke-width="26"
+      stroke-linejoin="round"
+      stroke-linecap="round"
+    />
+    <circle cx="325" cy="180" r="16" fill="#1A1208"/>
+  </g>
+</svg>

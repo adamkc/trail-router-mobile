@@ -1,0 +1,247 @@
+/* Shared primitives — chip, btn, stat, screen, statusbar, navpill, bottom tab */
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Mobile: disable overscroll bounce + double-tap zoom on interactive controls */
+@media (max-width: 480px) {
+  html, body {
+    overscroll-behavior: none;
+  }
+  button, a {
+    touch-action: manipulation;
+  }
+}
+
+body {
+  background: var(--page-bg);
+  font-family: var(--font-body);
+  color: var(--bone);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
+a { color: inherit; text-decoration: none; }
+input, textarea, select { font: inherit; color: inherit; }
+
+/* Screen — the scrollable body of a phone artboard */
+.screen {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--bone);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  font-family: var(--font-body);
+}
+.screen ::-webkit-scrollbar { width: 0; height: 0; }
+
+/* Custom status bar (time + mono icons, overrides device-frame Roboto one) */
+.statusbar {
+  height: 36px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--bone);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+.statusbar .right { display: flex; gap: 6px; align-items: center; }
+.statusbar svg { display: block; }
+
+/* Gesture nav pill */
+.navpill {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: transparent;
+}
+.navpill .pill {
+  width: 108px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bone);
+  opacity: 0.55;
+}
+
+/* Generic app header row */
+.appbar {
+  padding: 8px 16px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.appbar .iconbtn {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bone);
+  border: 1px solid var(--line-soft);
+}
+.appbar .title {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 20px;
+  letter-spacing: -0.01em;
+  color: var(--bone);
+  flex: 1;
+}
+.appbar .eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--moss);
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+
+/* Eyebrow label reusable */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--moss);
+  text-transform: uppercase;
+}
+
+/* Topo background pattern (faint topo rings) */
+.topo-bg {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(ellipse 120% 80% at 20% 30%, transparent 30%, var(--line-soft) 30.2%, transparent 30.7%),
+    radial-gradient(ellipse 120% 80% at 20% 30%, transparent 40%, var(--line-soft) 40.2%, transparent 40.7%),
+    radial-gradient(ellipse 120% 80% at 20% 30%, transparent 50%, var(--line-soft) 50.2%, transparent 50.7%),
+    radial-gradient(ellipse 120% 80% at 20% 30%, transparent 60%, var(--line-soft) 60.2%, transparent 60.7%);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Chips */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--surface-2);
+  border: 1px solid var(--line-soft);
+  color: var(--bone-dim);
+}
+.chip.blaze  { color: var(--blaze);  border-color: color-mix(in oklch, var(--blaze) 40%, transparent); background: color-mix(in oklch, var(--blaze) 12%, var(--surface-2)); }
+.chip.topo   { color: var(--topo);   border-color: color-mix(in oklch, var(--topo) 40%, transparent);  background: color-mix(in oklch, var(--topo) 10%, var(--surface-2)); }
+.chip.good   { color: var(--good);   border-color: color-mix(in oklch, var(--good) 40%, transparent);  background: color-mix(in oklch, var(--good) 10%, var(--surface-2)); }
+.chip.warn   { color: var(--warn);   border-color: color-mix(in oklch, var(--warn) 40%, transparent);  background: color-mix(in oklch, var(--warn) 10%, var(--surface-2)); }
+.chip.danger { color: var(--danger); border-color: color-mix(in oklch, var(--danger) 40%, transparent); background: color-mix(in oklch, var(--danger) 10%, var(--surface-2)); }
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+}
+.btn-primary { background: var(--blaze); color: #1A1208; }
+.btn-ghost   { background: var(--surface-2); color: var(--bone); border: 1px solid var(--line-soft); }
+.btn-danger  { background: transparent; color: var(--danger); border: 1px solid color-mix(in oklch, var(--danger) 40%, transparent); }
+
+/* Data stat typography */
+.stat-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--moss);
+}
+.stat-value {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 24px;
+  color: var(--bone);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.stat-unit {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--moss);
+  margin-left: 2px;
+}
+
+/* Bottom tab bar */
+.bottomtab {
+  display: flex;
+  padding: 8px 8px 6px;
+  background: var(--surface);
+  border-top: 1px solid var(--line-soft);
+  flex-shrink: 0;
+}
+.bottomtab .tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--moss);
+  cursor: pointer;
+  border-radius: 10px;
+}
+.bottomtab .tab.active { color: var(--blaze); }
+.bottomtab .tab.active .dot { background: var(--blaze); }
+.bottomtab .dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+/* Keyframes shared across screens */
+@keyframes pulse-ring {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  100% { transform: scale(2.4); opacity: 0;   }
+}
+@keyframes dash {
+  to { stroke-dashoffset: -40; }
+}
+@keyframes breathe {
+  0%, 100% { opacity: 1;    }
+  50%      { opacity: 0.55; }
+}

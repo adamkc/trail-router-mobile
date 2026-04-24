@@ -25,7 +25,10 @@ jobs:
           node-version: 22
           cache: npm
 
-      - run: npm ci
+      # Explicit --legacy-peer-deps because vite-plugin-pwa@1.2.0 declares a
+      # Vite ^3–^7 peer range and we're on Vite 8. (We also have it in .npmrc
+      # but `npm ci`'s lockfile-validation pass reads CLI flags more reliably.)
+      - run: npm ci --legacy-peer-deps
 
       # VITE_BASE must match the repo name so asset URLs resolve at /<repo>/.
       # Pages serves repo content at https://<user>.github.io/<repo>/, so the base

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
@@ -5,9 +6,17 @@ import { Icon } from '../components/Icon';
 import { ElevChart } from '../components/ElevChart';
 import { BottomTabBar } from '../components/BottomTabBar';
 import type { ChipTone } from '../components/Chip';
-import { useLibrary } from '../store/library';
+import { useLibrary, type RouteStatus } from '../store/library';
 
-const SEGMENTS = ['ALL', 'BUILT', 'DRAFT', 'OPTIMIZED'] as const;
+type Segment = 'ALL' | 'BUILT' | 'DRAFT' | 'OPTIMIZED';
+const SEGMENTS: readonly Segment[] = ['ALL', 'BUILT', 'DRAFT', 'OPTIMIZED'] as const;
+
+const SEGMENT_PREDICATE: Record<Segment, (status: RouteStatus) => boolean> = {
+  ALL:       () => true,
+  BUILT:     (s) => s === 'built',
+  DRAFT:     (s) => s === 'draft',
+  OPTIMIZED: (s) => s === 'optimized',
+};
 
 const rowColor = (tag: ChipTone | null): string =>
   tag === 'blaze' ? 'var(--blaze)'
@@ -32,7 +41,9 @@ const sumGain = (routes: Array<{ gain: string }>): string => {
 
 export function LibraryScreen() {
   const navigate = useNavigate();
-  const ROUTES = useLibrary((s) => s.routes);
+  const allRoutes = useLibrary((s) => s.routes);
+  const [segment, setSegment] = useState<Segment>('ALL');
+  const ROUTES = allRoutes.filter((r) => SEGMENT_PREDICATE[segment](r.status));
   return (
     <div className="screen">
       <StatusBar />
@@ -98,20 +109,25 @@ export function LibraryScreen() {
 
       {/* Segmented tabs */}
       <div style={{ display: 'flex', gap: 6, padding: '0 20px 14px' }}>
-        {SEGMENTS.map((t, i) => (
-          <div
-            key={t}
-            style={{
-              padding: '6px 12px', borderRadius: 100,
-              fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em',
-              background: i === 0 ? 'var(--bone)' : 'transparent',
-              color: i === 0 ? 'var(--bg)' : 'var(--moss)',
-              border: i === 0 ? 'none' : '1px solid var(--line-soft)',
-            }}
-          >
-            {t}
-          </div>
-        ))}
+        {SEGMENTS.map((t) => {
+          const active = segment === t;
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setSegment(t)}
+              style={{
+                padding: '6px 12px', borderRadius: 100,
+                fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em',
+                background: active ? 'var(--bone)' : 'transparent',
+                color: active ? 'var(--bg)' : 'var(--moss)',
+                border: active ? 'none' : '1px solid var(--line-soft)',
+              }}
+            >
+              {t}
+            </button>
+          );
+        })}
       </div>
 
       {/* Routes list */}

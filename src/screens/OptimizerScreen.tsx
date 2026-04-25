@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
@@ -22,6 +22,11 @@ export function OptimizerScreen() {
   const navigate = useNavigate();
   const beforeGeo = useMemo(() => svgArrayToGeo(BEFORE_SVG), []);
   const afterGeo  = useMemo(() => svgArrayToGeo(AFTER_SVG), []);
+
+  const [targetGrade, setTargetGrade] = useState(7);
+  const [maxGrade, setMaxGrade] = useState(12);
+  const [paused, setPaused] = useState(false);
+
   return (
     <div className="screen" style={{ background: 'var(--bg)' }}>
       <StatusBar />
@@ -136,143 +141,27 @@ export function OptimizerScreen() {
         <div className="eyebrow" style={{ marginBottom: 8 }}>PARAMETERS</div>
 
         {/* Target grade */}
-        <div
-          style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--line-soft)',
-            borderRadius: 12,
-            padding: 12,
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 500 }}>
-              Target grade
-            </div>
-            <div
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 15,
-                color: 'var(--blaze)',
-                fontWeight: 600,
-              }}
-            >
-              7.0<span style={{ color: 'var(--moss)', fontSize: 11 }}>%</span>
-            </div>
-          </div>
-          <div
-            style={{
-              position: 'relative',
-              height: 6,
-              background: 'var(--surface-2)',
-              borderRadius: 3,
-              marginTop: 10,
-            }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                left: 0,
-                top: 0,
-                height: 6,
-                width: '35%',
-                background: 'var(--blaze)',
-                borderRadius: 3,
-              }}
-            />
-            <div
-              style={{
-                position: 'absolute',
-                left: '35%',
-                top: -4,
-                width: 14,
-                height: 14,
-                borderRadius: 7,
-                background: 'var(--blaze)',
-                transform: 'translateX(-50%)',
-                border: '2px solid #12160F',
-              }}
-            />
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 9,
-              color: 'var(--moss)',
-              marginTop: 6,
-              letterSpacing: '0.08em',
-            }}
-          >
-            <span>3%</span>
-            <span>20%</span>
-          </div>
-        </div>
+        <ParamSlider
+          label="Target grade"
+          value={targetGrade}
+          min={3}
+          max={20}
+          step={0.5}
+          color="var(--blaze)"
+          onChange={setTargetGrade}
+        />
 
         {/* Max grade hard cap */}
-        <div
-          style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--line-soft)',
-            borderRadius: 12,
-            padding: 12,
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 500 }}>
-              Max segment grade{' '}
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--moss)' }}>
-                (hard cap)
-              </span>
-            </div>
-            <div
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 15,
-                color: 'var(--warn)',
-                fontWeight: 600,
-              }}
-            >
-              12<span style={{ color: 'var(--moss)', fontSize: 11 }}>%</span>
-            </div>
-          </div>
-          <div
-            style={{
-              position: 'relative',
-              height: 6,
-              background: 'var(--surface-2)',
-              borderRadius: 3,
-              marginTop: 10,
-            }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                left: 0,
-                top: 0,
-                height: 6,
-                width: '52%',
-                background: 'var(--warn)',
-                borderRadius: 3,
-              }}
-            />
-            <div
-              style={{
-                position: 'absolute',
-                left: '52%',
-                top: -4,
-                width: 14,
-                height: 14,
-                borderRadius: 7,
-                background: 'var(--warn)',
-                transform: 'translateX(-50%)',
-                border: '2px solid #12160F',
-              }}
-            />
-          </div>
-        </div>
+        <ParamSlider
+          label="Max segment grade"
+          subLabel="(hard cap)"
+          value={maxGrade}
+          min={5}
+          max={25}
+          step={0.5}
+          color="var(--warn)"
+          onChange={setMaxGrade}
+        />
 
         {/* Advanced collapsible */}
         <div
@@ -347,7 +236,7 @@ export function OptimizerScreen() {
                 <div>
                   3.6 km <span style={{ color: 'var(--good)' }}>+0.8</span>
                 </div>
-                <div>Avg 7.1% · Max 11.8%</div>
+                <div>Avg {targetGrade.toFixed(1)}% · Max {Math.min(maxGrade, 18.2).toFixed(1)}%</div>
               </div>
             </div>
           </div>
@@ -371,7 +260,14 @@ export function OptimizerScreen() {
           borderTop: '1px solid var(--line-soft)',
         }}
       >
-        <button type="button" className="btn btn-ghost" style={{ flex: 1 }}>Pause</button>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          style={{ flex: 1 }}
+          onClick={() => setPaused((p) => !p)}
+        >
+          {paused ? 'Resume' : 'Pause'}
+        </button>
         <button
           type="button"
           className="btn btn-primary"
@@ -382,6 +278,107 @@ export function OptimizerScreen() {
         </button>
       </div>
       <NavPill />
+    </div>
+  );
+}
+
+// ─── Slider helper ─────────────────────────────────────────────────────────
+
+function ParamSlider({
+  label,
+  subLabel,
+  value,
+  min,
+  max,
+  step = 1,
+  color,
+  onChange,
+}: {
+  label: string;
+  subLabel?: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  color: string;
+  onChange: (v: number) => void;
+}) {
+  const pct = ((value - min) / (max - min)) * 100;
+  return (
+    <div
+      style={{
+        background: 'var(--surface)',
+        border: '1px solid var(--line-soft)',
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 8,
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 500 }}>
+          {label}
+          {subLabel && (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--moss)' }}>
+              {' '}{subLabel}
+            </span>
+          )}
+        </div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 15, color, fontWeight: 600 }}>
+          {value.toFixed(value % 1 ? 1 : 0)}<span style={{ color: 'var(--moss)', fontSize: 11 }}>%</span>
+        </div>
+      </div>
+      <div style={{ position: 'relative', height: 24, marginTop: 10 }}>
+        {/* Visual track + fill + thumb */}
+        <div
+          style={{
+            position: 'absolute', left: 0, right: 0, top: 9,
+            height: 6, background: 'var(--surface-2)', borderRadius: 3,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute', left: 0, top: 9,
+            height: 6, width: `${pct}%`, background: color, borderRadius: 3, pointerEvents: 'none',
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute', left: `${pct}%`, top: 5,
+            width: 14, height: 14, borderRadius: 7,
+            background: color, transform: 'translateX(-50%)',
+            border: '2px solid #12160F', pointerEvents: 'none',
+          }}
+        />
+        {/* Real range input — invisible but captures interaction (touch + mouse) */}
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          aria-label={label}
+          style={{
+            position: 'absolute', inset: 0,
+            width: '100%', height: '100%',
+            opacity: 0, cursor: 'pointer', margin: 0,
+          }}
+        />
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontFamily: 'var(--font-mono)',
+          fontSize: 9,
+          color: 'var(--moss)',
+          marginTop: 4,
+          letterSpacing: '0.08em',
+        }}
+      >
+        <span>{min}%</span>
+        <span>{max}%</span>
+      </div>
     </div>
   );
 }

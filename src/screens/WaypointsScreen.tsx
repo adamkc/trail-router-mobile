@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
@@ -39,15 +39,31 @@ const WAYPOINTS: Waypoint[] = [
   { id: 5, icon: 'C', type: 'Camp',   color: 'var(--bone)',   label: 'Meadow bivy',        note: 'Flat · wind-protected',    dist: '3.8 km' },
 ];
 
-const FILTER_CHIPS = ['ALL 5', 'WATER 1', 'HAZARD 1', 'VISTA 1', 'PHOTO 1', 'CAMP 1'];
+type WaypointFilter = 'ALL' | 'WATER' | 'HAZARD' | 'VISTA' | 'PHOTO' | 'CAMP';
+const FILTER_KEYS: readonly WaypointFilter[] = ['ALL', 'WATER', 'HAZARD', 'VISTA', 'PHOTO', 'CAMP'] as const;
 
 export function WaypointsScreen() {
   const navigate = useNavigate();
+  const [filter, setFilter] = useState<WaypointFilter>('ALL');
+
+  const visibleWaypoints = WAYPOINTS.filter(
+    (w) => filter === 'ALL' || w.type.toUpperCase() === filter,
+  );
+
   const trailGeo = useMemo(() => svgArrayToGeo(TRAIL_SVG), []);
   const pinsGeo  = useMemo(
     () => MAP_PINS_SVG.map((p) => ({ ...p, coord: svgArrayToGeo([p.pos])[0] })),
     [],
   );
+  // Hide pins on the mini-map for filtered-out types.
+  const visiblePinsGeo = pinsGeo.filter((p) => filter === 'ALL' || p.icon === filter[0]);
+
+  // Per-type counts for the chip labels.
+  const typeCounts: Record<string, number> = WAYPOINTS.reduce<Record<string, number>>((acc, w) => {
+    acc[w.type.toUpperCase()] = (acc[w.type.toUpperCase()] || 0) + 1;
+    return acc;
+  }, {});
+
   return (
     <div className="screen">
       <StatusBar />
@@ -106,7 +122,7 @@ export function WaypointsScreen() {
         <MapCanvas center={HAYFORK} zoom={14} interactive={false}>
           <FitBoundsToCoords coords={trailGeo} padding={36} />
           <MapGeoLine id="wp-trail" coords={trailGeo} color={resolveCssVar('var(--blaze)')} width={2.5} onTop />
-          {pinsGeo.map((p) => (
+          {visiblePinsGeo.map((p) => (
             <MapWaypoint key={p.icon} coord={p.coord} icon={p.icon} color={resolveCssVar(p.color)} size={20} />
           ))}
         </MapCanvas>
@@ -114,29 +130,48 @@ export function WaypointsScreen() {
 
       {/* Filter chips */}
       <div style={{ display: 'flex', gap: 6, padding: '12px 16px 8px', overflowX: 'auto' }}>
-        {FILTER_CHIPS.map((c, i) => (
-          <div
-            key={c}
-            style={{
-              flexShrink: 0,
-              padding: '5px 10px',
-              borderRadius: 100,
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              letterSpacing: '0.08em',
-              background: i === 0 ? 'var(--bone)' : 'var(--surface-2)',
-              color: i === 0 ? 'var(--bg)' : 'var(--bone-dim)',
-              border: i === 0 ? 'none' : '1px solid var(--line-soft)',
-            }}
-          >
-            {c}
-          </div>
-        ))}
+        {FILTER_KEYS.map((k) => {
+          const active = filter === k;
+          const count = k === 'ALL' ? WAYPOINTS.length : (typeCounts[k] ?? 0);
+          return (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setFilter(k)}
+              style={{
+                flexShrink: 0,
+                padding: '5px 10px',
+                borderRadius: 100,
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                letterSpacing: '0.08em',
+                background: active ? 'var(--bone)' : 'var(--surface-2)',
+                color: active ? 'var(--bg)' : 'var(--bone-dim)',
+                border: active ? 'none' : '1px solid var(--line-soft)',
+              }}
+            >
+              {k} {count}
+            </button>
+          );
+        })}
       </div>
 
       {/* List */}
       <div style={{ flex: 1, overflow: 'auto', padding: '0 16px 16px' }}>
-        {WAYPOINTS.map((w) => (
+        {visibleWaypoints.length === 0 ? (
+          <div
+            style={{
+              padding: '32px 12px',
+              textAlign: 'center',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              color: 'var(--moss)',
+              letterSpacing: '0.06em',
+            }}
+          >
+            NO {filter} WAYPOINTS
+          </div>
+        ) : visibleWaypoints.map((w) => (
           <div
             key={w.id}
             style={{

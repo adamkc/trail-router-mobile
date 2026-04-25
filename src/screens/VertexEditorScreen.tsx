@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
@@ -16,8 +16,9 @@ const TRAIL_SVG: Array<[number, number]> = [
 const FROZEN_IDX = [0, 9];
 const ACTIVE_IDX = 4;
 
-const TOOLS: Array<{ icon: IconName; label: string; active?: boolean }> = [
-  { icon: 'edit',     label: 'MOVE', active: true },
+type EditorTool = 'MOVE' | 'ADD' | 'DELETE' | 'FREEZE' | 'WAYPOINT' | 'OPTIMIZE';
+const TOOLS: Array<{ icon: IconName; label: EditorTool }> = [
+  { icon: 'edit',     label: 'MOVE'     },
   { icon: 'plus',     label: 'ADD'      },
   { icon: 'close',    label: 'DELETE'   },
   { icon: 'lock',     label: 'FREEZE'   },
@@ -27,10 +28,21 @@ const TOOLS: Array<{ icon: IconName; label: string; active?: boolean }> = [
 
 export function VertexEditorScreen() {
   const navigate = useNavigate();
+  const [activeTool, setActiveTool] = useState<EditorTool>('MOVE');
   const trailGeo = useMemo(() => svgArrayToGeo(TRAIL_SVG), []);
   const activeVertex = trailGeo[ACTIVE_IDX];
   const blaze = resolveCssVar('var(--blaze)');
   const topo = resolveCssVar('var(--topo)');
+
+  const handleToolClick = (tool: EditorTool) => {
+    if (tool === 'OPTIMIZE') {
+      navigate('/optimizer');
+    } else if (tool === 'WAYPOINT') {
+      navigate('/waypoints');
+    } else {
+      setActiveTool(tool);
+    }
+  };
 
   return (
     <div className="screen">
@@ -229,27 +241,33 @@ export function VertexEditorScreen() {
           }}
         >
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
-            {TOOLS.map((t) => (
-              <div
-                key={t.label}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '8px 10px',
-                  minWidth: 60,
-                  borderRadius: 10,
-                  background: t.active ? 'var(--blaze)' : 'transparent',
-                  color: t.active ? '#1A1208' : 'var(--bone-dim)',
-                }}
-              >
-                <Icon name={t.icon} size={18} color={t.active ? '#1A1208' : 'var(--bone-dim)'} />
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.1em' }}>
-                  {t.label}
-                </div>
-              </div>
-            ))}
+            {TOOLS.map((t) => {
+              const active = activeTool === t.label;
+              return (
+                <button
+                  key={t.label}
+                  type="button"
+                  onClick={() => handleToolClick(t.label)}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '8px 10px',
+                    minWidth: 60,
+                    borderRadius: 10,
+                    background: active ? 'var(--blaze)' : 'transparent',
+                    color: active ? '#1A1208' : 'var(--bone-dim)',
+                    border: 'none',
+                  }}
+                >
+                  <Icon name={t.icon} size={18} color={active ? '#1A1208' : 'var(--bone-dim)'} />
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.1em' }}>
+                    {t.label}
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
           {/* Grade mini-ribbon */}

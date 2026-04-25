@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
@@ -70,11 +70,13 @@ const LABELS_SVG: Array<{ pos: [number, number]; text: string; tone?: 'topo' }> 
   { pos: [130, 255], text: 'MEADOW (PROP)', tone: 'topo' },
 ];
 
-const LEGEND_LAYERS: Array<{ label: string; color: string; n: number; solid: boolean; on: boolean }> = [
-  { label: 'Optimized', color: 'var(--blaze)', n: 2, solid: true,  on: true },
-  { label: 'Built',     color: 'var(--good)',  n: 7, solid: true,  on: true },
-  { label: 'Draft',     color: 'var(--bone)',  n: 3, solid: false, on: true },
-  { label: 'Proposed',  color: 'var(--topo)',  n: 2, solid: false, on: true },
+type LayerKey = 'optimized' | 'built' | 'draft' | 'proposed';
+
+const LEGEND_LAYERS: Array<{ key: LayerKey; label: string; color: string; n: number; solid: boolean }> = [
+  { key: 'optimized', label: 'Optimized', color: 'var(--blaze)', n: 2, solid: true  },
+  { key: 'built',     label: 'Built',     color: 'var(--good)',  n: 7, solid: true  },
+  { key: 'draft',     label: 'Draft',     color: 'var(--bone)',  n: 3, solid: false },
+  { key: 'proposed',  label: 'Proposed',  color: 'var(--topo)',  n: 2, solid: false },
 ];
 
 const MAP_TOOLS: Array<{ icon: IconName; active?: boolean }> = [
@@ -84,20 +86,27 @@ const MAP_TOOLS: Array<{ icon: IconName; active?: boolean }> = [
   { icon: 'target' },
 ];
 
-const SNAP_TOGGLES = [
-  { label: 'JCT', on: true },
-  { label: 'CNT', on: true },
-  { label: 'GRD', on: false },
-];
+type SnapKey = 'JCT' | 'CNT' | 'GRD';
 
 export function NetworkMapScreen() {
   const navigate = useNavigate();
+
+  const [layersOn, setLayersOn] = useState<Record<LayerKey, boolean>>({
+    optimized: true, built: true, draft: true, proposed: true,
+  });
+  const [snaps, setSnaps] = useState<Record<SnapKey, boolean>>({ JCT: true, CNT: true, GRD: false });
+
+  const toggleLayer = (k: LayerKey) => setLayersOn((s) => ({ ...s, [k]: !s[k] }));
+  const toggleSnap = (k: SnapKey) => setSnaps((s) => ({ ...s, [k]: !s[k] }));
 
   // Project all SVG-coord trail data into lng/lat so it sits on the real map.
   const geoNetwork = useMemo(
     () => NETWORK.map((t) => ({ ...t, geo: svgArrayToGeo(t.pts), color: resolveCssVar(t.color) })),
     [],
   );
+
+  // Filter to only the trails whose status is currently toggled on.
+  const visibleNetwork = geoNetwork.filter((t) => layersOn[t.status]);
   const geoTrailhead = useMemo(() => svgToGeo(TRAILHEAD_SVG), []);
   const geoPeak = useMemo(() => svgToGeo(PEAK_SVG), []);
   const geoJunctions = useMemo(() => svgArrayToGeo(JUNCTIONS_SVG), []);
@@ -115,7 +124,7 @@ export function NetworkMapScreen() {
       <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
         <MapCanvas center={HAYFORK} zoom={14}>
           <FitBoundsToCoords coords={allCoords} padding={48} />
-          {geoNetwork.map((t) => (
+          {visibleNetwork.map((t) => (
             <MapGeoLine
               key={t.name}
               id={`net-${t.name.replace(/\s+/g, '-').toLowerCase()}`}
@@ -229,36 +238,44 @@ export function NetworkMapScreen() {
           }}
         >
           <div className="eyebrow" style={{ marginBottom: 6 }}>LAYERS</div>
-          {LEGEND_LAYERS.map((l) => (
-            <div
-              key={l.label}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: '4px 0',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                color: 'var(--bone-dim)',
-                letterSpacing: '0.05em',
-              }}
-            >
-              <div
+          {LEGEND_LAYERS.map((l) => {
+            const on = layersOn[l.key];
+            return (
+              <button
+                key={l.key}
+                type="button"
+                onClick={() => toggleLayer(l.key)}
                 style={{
-                  width: 16,
-                  height: 3,
-                  background: l.color,
-                  opacity: l.on ? 1 : 0.3,
-                  borderRadius: 2,
-                  backgroundImage: l.solid
-                    ? 'none'
-                    : `repeating-linear-gradient(90deg, ${l.color} 0 4px, transparent 4px 7px)`,
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '4px 0',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 10,
+                  color: 'var(--bone-dim)',
+                  letterSpacing: '0.05em',
+                  background: 'transparent',
+                  border: 'none',
                 }}
-              />
-              <span style={{ flex: 1, opacity: l.on ? 1 : 0.4 }}>{l.label.toUpperCase()}</span>
-              <span style={{ color: 'var(--moss)' }}>{l.n}</span>
-            </div>
-          ))}
+              >
+                <div
+                  style={{
+                    width: 16,
+                    height: 3,
+                    background: l.color,
+                    opacity: on ? 1 : 0.3,
+                    borderRadius: 2,
+                    backgroundImage: l.solid
+                      ? 'none'
+                      : `repeating-linear-gradient(90deg, ${l.color} 0 4px, transparent 4px 7px)`,
+                  }}
+                />
+                <span style={{ flex: 1, opacity: on ? 1 : 0.4, textAlign: 'left' }}>{l.label.toUpperCase()}</span>
+                <span style={{ color: 'var(--moss)' }}>{l.n}</span>
+              </button>
+            );
+          })}
           <div style={{ height: 1, background: 'var(--line-soft)', margin: '8px 0' }} />
           <div
             style={{
@@ -302,38 +319,43 @@ export function NetworkMapScreen() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            {SNAP_TOGGLES.map((s) => (
-              <div
-                key={s.label}
-                style={{
-                  padding: '5px 8px',
-                  borderRadius: 8,
-                  background: s.on
-                    ? 'color-mix(in oklch, var(--blaze) 18%, var(--surface-2))'
-                    : 'var(--surface-2)',
-                  border: `1px solid ${s.on ? 'color-mix(in oklch, var(--blaze) 40%, transparent)' : 'var(--line-soft)'}`,
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 9,
-                  letterSpacing: '0.1em',
-                  color: s.on ? 'var(--blaze)' : 'var(--moss)',
-                }}
-              >
-                {s.label}
-              </div>
-            ))}
+            {(['JCT', 'CNT', 'GRD'] as const).map((label) => {
+              const on = snaps[label];
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => toggleSnap(label)}
+                  style={{
+                    padding: '5px 8px',
+                    borderRadius: 8,
+                    background: on
+                      ? 'color-mix(in oklch, var(--blaze) 18%, var(--surface-2))'
+                      : 'var(--surface-2)',
+                    border: `1px solid ${on ? 'color-mix(in oklch, var(--blaze) 40%, transparent)' : 'var(--line-soft)'}`,
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 9,
+                    letterSpacing: '0.1em',
+                    color: on ? 'var(--blaze)' : 'var(--moss)',
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
         <div style={{ display: 'flex', gap: 8 }}>
-          <div className="btn btn-primary" style={{ flex: 2 }}>
+          <button type="button" className="btn btn-primary" style={{ flex: 2 }} onClick={() => navigate('/editor')}>
             <Icon name="plus" size={16} /> Draw route
-          </div>
-          <div className="btn btn-ghost" style={{ flex: 1 }}>
+          </button>
+          <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate('/record')}>
             <Icon name="record" size={16} color="var(--danger)" /> Record
-          </div>
-          <div className="btn btn-ghost">
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => navigate('/waypoints')} aria-label="Waypoints">
             <Icon name="waypoint" size={16} />
-          </div>
+          </button>
         </div>
 
         <div

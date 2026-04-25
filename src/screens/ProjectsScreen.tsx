@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
@@ -54,7 +55,14 @@ const PROJECTS: Project[] = [
   },
 ];
 
-const SEGMENTS = ['ALL', 'ACTIVE', 'ARCHIVED'] as const;
+type Segment = 'ALL' | 'ACTIVE' | 'ARCHIVED';
+const SEGMENTS: readonly Segment[] = ['ALL', 'ACTIVE', 'ARCHIVED'] as const;
+
+const SEGMENT_PREDICATE: Record<Segment, (status: string) => boolean> = {
+  ALL:      () => true,
+  ACTIVE:   (s) => s === 'active' || s === 'planning' || s === 'survey',
+  ARCHIVED: (s) => s === 'archived',
+};
 
 const tagStroke: Record<ChipTone, string> = {
   blaze:   'var(--blaze)',
@@ -67,6 +75,8 @@ const tagStroke: Record<ChipTone, string> = {
 
 export function ProjectsScreen() {
   const navigate = useNavigate();
+  const [segment, setSegment] = useState<Segment>('ALL');
+  const visibleProjects = PROJECTS.filter((p) => SEGMENT_PREDICATE[segment](p.status));
   return (
     <div className="screen">
       <StatusBar />
@@ -143,30 +153,50 @@ export function ProjectsScreen() {
 
       {/* Segment tabs */}
       <div style={{ display: 'flex', gap: 6, padding: '0 20px 14px' }}>
-        {SEGMENTS.map((t, i) => (
-          <div
-            key={t}
-            style={{
-              padding: '6px 12px',
-              borderRadius: 100,
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              letterSpacing: '0.1em',
-              background: i === 0 ? 'var(--bone)' : 'transparent',
-              color: i === 0 ? 'var(--bg)' : 'var(--moss)',
-              border: i === 0 ? 'none' : '1px solid var(--line-soft)',
-            }}
-          >
-            {t}
-          </div>
-        ))}
+        {SEGMENTS.map((t) => {
+          const active = segment === t;
+          return (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setSegment(t)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 100,
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                letterSpacing: '0.1em',
+                background: active ? 'var(--bone)' : 'transparent',
+                color: active ? 'var(--bg)' : 'var(--moss)',
+                border: active ? 'none' : '1px solid var(--line-soft)',
+              }}
+            >
+              {t}
+            </button>
+          );
+        })}
       </div>
 
       {/* Projects list */}
       <div style={{ flex: 1, overflow: 'auto', padding: '0 20px 20px' }}>
-        {PROJECTS.map((p, i) => (
-          <ProjectCard key={p.name} p={p} i={i} onOpen={() => navigate('/network-map')} />
-        ))}
+        {visibleProjects.length === 0 ? (
+          <div
+            style={{
+              padding: '32px 12px',
+              textAlign: 'center',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              color: 'var(--moss)',
+              letterSpacing: '0.06em',
+            }}
+          >
+            NO PROJECTS MATCH "{segment}"
+          </div>
+        ) : (
+          visibleProjects.map((p, i) => (
+            <ProjectCard key={p.name} p={p} i={i} onOpen={() => navigate('/network-map')} />
+          ))
+        )}
       </div>
 
       <BottomTabBar active="projects" />

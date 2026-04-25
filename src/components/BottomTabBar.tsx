@@ -20,7 +20,7 @@ const DEFAULT_DESTINATION: Record<BottomTabKey, string | null> = {
   home: '/home',
   projects: '/projects',
   record: '/record',
-  settings: null,
+  settings: '/settings',
 };
 
 interface BottomTabBarProps {

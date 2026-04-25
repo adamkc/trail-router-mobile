@@ -12,6 +12,7 @@ import { RecordReviewScreen } from './RecordReviewScreen';
 import { WaypointsScreen } from './WaypointsScreen';
 import { OfflineScreen } from './OfflineScreen';
 import { TabletNetworkScreen } from './TabletNetworkScreen';
+import { SettingsScreen } from './SettingsScreen';
 
 export type ScreenSection = 'project' | 'core' | 'field' | 'tablet';
 
@@ -40,6 +41,7 @@ export const SCREENS: ScreenEntry[] = [
   { id: 'waypoints',     label: 'F3 · Waypoints',             section: 'field',   path: '/waypoints',    width: 392,  height: 820,  Component: WaypointsScreen    },
   { id: 'offline',       label: 'F4 · Offline data',          section: 'field',   path: '/offline',      width: 392,  height: 820,  Component: OfflineScreen      },
   { id: 'tablet-network',label: 'T1 · Network planning',      section: 'tablet',  path: '/tablet',       width: 1600, height: 1000, Component: TabletNetworkScreen},
+  { id: 'settings',      label: 'S1 · Settings',              section: 'core',    path: '/settings',     width: 392,  height: 820,  Component: SettingsScreen     },
 ];
 
 export const SECTIONS: Record<ScreenSection, { title: string; subtitle: string }> = {

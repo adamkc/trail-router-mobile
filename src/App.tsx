@@ -2,6 +2,7 @@ import { HashRouter, Link, Route, Routes } from 'react-router-dom';
 import { DesignCanvas } from './components/DesignCanvas';
 import { AndroidDevice } from './components/AndroidDevice';
 import { SCREENS } from './screens/registry';
+import { RouteDetailsScreen } from './screens/RouteDetailsScreen';
 import { useIsMobile } from './hooks/useIsMobile';
 
 function ScreenFrame({ entry }: { entry: (typeof SCREENS)[number] }) {
@@ -118,6 +119,24 @@ export default function App() {
         {SCREENS.map((entry) => (
           <Route key={entry.id} path={entry.path} element={<ScreenFrame entry={entry} />} />
         ))}
+        {/* /details/:id reuses the Route Details screen but with the URL-param flavor.
+            Wrapped in the same ScreenFrame so it inherits the bezel + chrome. */}
+        <Route
+          path="/details/:id"
+          element={
+            <ScreenFrame
+              entry={{
+                id: 'details',
+                label: '03 · Route details',
+                section: 'core',
+                path: '/details',
+                width: 392,
+                height: 820,
+                Component: RouteDetailsScreen,
+              }}
+            />
+          }
+        />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </HashRouter>

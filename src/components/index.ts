@@ -4,7 +4,7 @@ export { NavPill } from './NavPill';
 export { TopoMap } from './TopoMap';
 export { MapCanvas, useMapInstance } from './MapCanvas';
 export { MapGeoLine } from './MapGeoLine';
-export { MapPin, MapWaypoint, MapJunction, MapActiveVertex, MapLabel, FitBoundsToCoords } from './MapMarkers';
+export { MapPin, MapWaypoint, MapJunction, MapActiveVertex, MapDraggableVertex, MapLabel, FitBoundsToCoords } from './MapMarkers';
 export { TrailLine } from './TrailLine';
 export { ElevChart } from './ElevChart';
 export { SlopeRibbon } from './SlopeRibbon';

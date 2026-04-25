@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon } from '../components/Icon';
 import { BottomTabBar } from '../components/BottomTabBar';
 import type { ChipTone } from '../components/Chip';
+import { useLibrary } from '../store/library';
 
 interface Project {
   name: string;
@@ -76,7 +77,53 @@ const tagStroke: Record<ChipTone, string> = {
 export function ProjectsScreen() {
   const navigate = useNavigate();
   const [segment, setSegment] = useState<Segment>('ALL');
-  const visibleProjects = PROJECTS.filter((p) => SEGMENT_PREDICATE[segment](p.status));
+  const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const routes = useLibrary((s) => s.routes);
+
+  // Hayfork derives its counts + total km/gain from the live library — every
+  // route the user records or saves shows up here without a manual update.
+  const hayforkCounts = useMemo(() => {
+    const counts = { built: 0, draft: 0, optimized: 0, total: routes.length };
+    let kmSum = 0, gainSum = 0;
+    for (const r of routes) {
+      if (r.status === 'built') counts.built += 1;
+      else if (r.status === 'draft') counts.draft += 1;
+      else if (r.status === 'optimized') counts.optimized += 1;
+      kmSum += parseFloat(r.km) || 0;
+      gainSum += parseInt(r.gain.replace(/[^\d-]/g, ''), 10) || 0;
+    }
+    return { ...counts, km: kmSum.toFixed(1), gain: `+${gainSum.toLocaleString()}` };
+  }, [routes]);
+
+  const projectsLive = PROJECTS.map((p) =>
+    p.name === 'Hayfork'
+      ? {
+          ...p,
+          trails: hayforkCounts.total,
+          km: hayforkCounts.km,
+          gain: hayforkCounts.gain,
+          built: hayforkCounts.built,
+          draft: hayforkCounts.draft,
+          optimized: hayforkCounts.optimized,
+        }
+      : p,
+  );
+
+  const q = search.trim().toLowerCase();
+  const visibleProjects = projectsLive
+    .filter((p) => SEGMENT_PREDICATE[segment](p.status))
+    .filter((p) => !q || p.name.toLowerCase().includes(q));
+
+  // Project-layer summary strip: total networks, trails, km. Recompute live.
+  const summary = useMemo(() => {
+    const totalTrails = projectsLive.reduce((acc, p) => acc + p.trails, 0);
+    const totalKm = projectsLive
+      .reduce((acc, p) => acc + (parseFloat(p.km) || 0), 0)
+      .toFixed(1);
+    return { networks: projectsLive.length, trails: totalTrails, km: totalKm };
+  }, [projectsLive]);
+
   return (
     <div className="screen">
       <StatusBar />
@@ -99,31 +146,66 @@ export function ProjectsScreen() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            {(['search', 'plus'] as const).map((name) => (
-              <div
-                key={name}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 12,
-                  background: 'var(--surface-2)',
-                  display: 'grid',
-                  placeItems: 'center',
-                  border: '1px solid var(--line-soft)',
-                }}
-              >
-                <Icon name={name} size={18} />
-              </div>
-            ))}
+            <button
+              type="button"
+              onClick={() => { setSearchOpen((v) => !v); if (searchOpen) setSearch(''); }}
+              aria-label={searchOpen ? 'Close search' : 'Search projects'}
+              style={{
+                width: 40, height: 40, borderRadius: 12,
+                background: searchOpen ? 'var(--blaze)' : 'var(--surface-2)',
+                color: searchOpen ? '#1A1208' : 'var(--bone)',
+                display: 'grid', placeItems: 'center',
+                border: '1px solid var(--line-soft)',
+              }}
+            >
+              <Icon name={searchOpen ? 'close' : 'search'} size={18} />
+            </button>
+            <button
+              type="button"
+              aria-label="New project"
+              style={{
+                width: 40, height: 40, borderRadius: 12,
+                background: 'var(--surface-2)',
+                color: 'var(--bone)',
+                display: 'grid', placeItems: 'center',
+                border: '1px solid var(--line-soft)',
+              }}
+            >
+              <Icon name="plus" size={18} />
+            </button>
           </div>
         </div>
+
+        {searchOpen && (
+          <input
+            type="search"
+            autoFocus
+            placeholder="Search projects…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{
+              display: 'block',
+              width: '100%',
+              marginTop: 12,
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: 'var(--surface-2)',
+              border: '1px solid var(--line-soft)',
+              color: 'var(--bone)',
+              fontFamily: 'var(--font-body)',
+              fontSize: 14,
+              outline: 'none',
+              caretColor: 'var(--blaze)',
+            }}
+          />
+        )}
 
         {/* Summary strip */}
         <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
           {[
-            { k: 'NETWORKS', v: '4' },
-            { k: 'TRAILS', v: '43' },
-            { k: 'TOTAL KM', v: '163.3' },
+            { k: 'NETWORKS', v: String(summary.networks) },
+            { k: 'TRAILS', v: String(summary.trails) },
+            { k: 'TOTAL KM', v: summary.km },
           ].map((s) => (
             <div
               key={s.k}

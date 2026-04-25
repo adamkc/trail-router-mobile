@@ -1,17 +1,13 @@
-import { useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon } from '../components/Icon';
 import { ElevChart } from '../components/ElevChart';
 import { SlopeRibbon } from '../components/SlopeRibbon';
 import { DataRow } from '../components/DataRow';
-
-const ELEV = [
-  420, 424, 430, 448, 470, 498, 522, 548, 574, 598, 614, 628, 638, 640,
-  628, 612, 588, 556, 520, 480, 452, 438, 428, 422, 420,
-];
-
-const SLOPE = [2, 3, 4, 6, 7, 9, 8, 7, 6, 5, 4, 3, 1, -2, -4, -6, -8, -10, -11, -9, -6, -4, -2, -1];
+import { useLibrary, type LibraryRoute } from '../store/library';
+import type { ChipTone } from '../components/Chip';
 
 interface StatEntry {
   l: string;
@@ -20,17 +16,85 @@ interface StatEntry {
   c?: string;
 }
 
-const STATS: StatEntry[] = [
-  { l: 'LENGTH',    v: '14.2',  u: 'km' },
-  { l: 'GAIN',      v: '+640',  u: 'm',  c: 'var(--good)' },
-  { l: 'LOSS',      v: '−640',  u: 'm',  c: 'var(--topo)' },
-  { l: 'AVG GRADE', v: '6.1',   u: '%'  },
-  { l: 'MAX GRADE', v: '12.4',  u: '%',  c: 'var(--warn)' },
-  { l: 'MOV TIME',  v: '3:40',  u: 'h'  },
-];
+const tagToTargetText: Record<RouteStatusKey, string> = {
+  optimized: '7.0% · cap 12%',
+  built:     '— · field-built',
+  draft:     'unset',
+  review:    '12.0% · cap 15%',
+};
+
+type RouteStatusKey = LibraryRoute['status'];
+
+/** Minimum-fidelity slope series derived from the spark + average grade. */
+function slopeSeriesFromSpark(spark: number[]): number[] {
+  if (spark.length < 2) return [0];
+  const out: number[] = [];
+  for (let i = 1; i < spark.length; i++) {
+    // Convert elevation deltas to a synthetic %-grade. Each segment is one
+    // SlopeRibbon bar — clamp to ±15 so the ribbon stays readable.
+    const d = spark[i] - spark[i - 1];
+    const grade = Math.max(-18, Math.min(18, d / 8));
+    out.push(grade);
+  }
+  return out;
+}
+
+function statsForRoute(r: LibraryRoute): StatEntry[] {
+  const minElev = Math.min(...r.spark);
+  const maxElev = Math.max(...r.spark);
+  const lossNum = parseInt(r.gain.replace(/[^\d-]/g, ''), 10) || 0;
+  const slope = slopeSeriesFromSpark(r.spark);
+  const maxGrade = slope.length ? Math.max(...slope.map(Math.abs)) : 0;
+  return [
+    { l: 'LENGTH',    v: r.km,                  u: 'km' },
+    { l: 'GAIN',      v: r.gain,                u: 'm', c: 'var(--good)' },
+    { l: 'LOSS',      v: `−${Math.abs(lossNum)}`, u: 'm', c: 'var(--topo)' },
+    { l: 'AVG GRADE', v: r.grade,               u: '%' },
+    { l: 'MAX GRADE', v: maxGrade.toFixed(1),   u: '%', c: maxGrade > 10 ? 'var(--warn)' : undefined },
+    { l: 'ELEV',      v: `${minElev}-${maxElev}`, u: 'm' },
+  ];
+}
+
+const tagColor = (tag: ChipTone | null): string =>
+  tag === 'blaze' ? 'var(--blaze)'
+  : tag === 'warn' ? 'var(--warn)'
+  : tag === 'good' ? 'var(--good)'
+  : 'var(--bone)';
 
 export function RouteDetailsScreen() {
   const navigate = useNavigate();
+  const { id } = useParams<{ id?: string }>();
+  const routes = useLibrary((s) => s.routes);
+
+  // Look up the route from the URL param, falling back to the top of the library
+  // (e.g. when the canvas previews this screen without a specific route in mind).
+  const route = useMemo(
+    () => (id ? routes.find((r) => r.id === id) : null) ?? routes[0],
+    [id, routes],
+  );
+
+  if (!route) {
+    return (
+      <div className="screen">
+        <StatusBar />
+        <div style={{ padding: 24, color: 'var(--bone-dim)' }}>
+          No route selected.{' '}
+          <button type="button" onClick={() => navigate('/library')} style={{ color: 'var(--blaze)' }}>
+            Back to library
+          </button>
+        </div>
+        <NavPill />
+      </div>
+    );
+  }
+
+  const stats = useMemo(() => statsForRoute(route), [route]);
+  const slope = useMemo(() => slopeSeriesFromSpark(route.spark), [route.spark]);
+  const elevMin = Math.min(...route.spark);
+  const elevMax = Math.max(...route.spark);
+  const accent = tagColor(route.tag);
+  const peakIdx = route.spark.indexOf(elevMax);
+
   return (
     <div className="screen">
       <StatusBar />
@@ -46,16 +110,17 @@ export function RouteDetailsScreen() {
           <Icon name="back" size={18} />
         </button>
         <div style={{ flex: 1 }}>
-          <div className="eyebrow">ROUTE · 001</div>
+          <div className="eyebrow">ROUTE · {route.id.slice(0, 8).toUpperCase()}</div>
           <div
             style={{
               fontFamily: 'var(--font-display)',
               fontSize: 20,
               fontWeight: 500,
               letterSpacing: '-0.01em',
+              color: accent,
             }}
           >
-            Hayfork Loop
+            {route.name}
           </div>
         </div>
         <div className="iconbtn">
@@ -66,7 +131,7 @@ export function RouteDetailsScreen() {
       <div style={{ flex: 1, overflow: 'auto', padding: '0 20px 20px' }}>
         {/* Stats grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-          {STATS.map((s) => (
+          {stats.map((s) => (
             <div
               key={s.l}
               style={{
@@ -114,14 +179,14 @@ export function RouteDetailsScreen() {
           >
             <div className="eyebrow">ELEVATION PROFILE</div>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--moss)' }}>
-              420 → 640 m
+              {elevMin} → {elevMax} m
             </div>
           </div>
           <div style={{ height: 90, position: 'relative' }}>
-            <ElevChart data={ELEV} height={90} mark={13} />
-            <div style={{ position: 'absolute', left: 0, top: 2, fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--moss)' }}>640</div>
-            <div style={{ position: 'absolute', left: 0, bottom: 2, fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--moss)' }}>420</div>
-            <div style={{ position: 'absolute', right: 0, bottom: -14, fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--moss)' }}>14.2 km</div>
+            <ElevChart data={route.spark} height={90} mark={peakIdx} color={accent} />
+            <div style={{ position: 'absolute', left: 0, top: 2, fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--moss)' }}>{elevMax}</div>
+            <div style={{ position: 'absolute', left: 0, bottom: 2, fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--moss)' }}>{elevMin}</div>
+            <div style={{ position: 'absolute', right: 0, bottom: -14, fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--moss)' }}>{route.km} km</div>
             <div style={{ position: 'absolute', left: 24, bottom: -14, fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--moss)' }}>0</div>
           </div>
         </div>
@@ -160,7 +225,7 @@ export function RouteDetailsScreen() {
             </div>
           </div>
           <div style={{ height: 50 }}>
-            <SlopeRibbon data={SLOPE} height={50} />
+            <SlopeRibbon data={slope} height={50} />
           </div>
         </div>
 
@@ -174,21 +239,14 @@ export function RouteDetailsScreen() {
             border: '1px solid var(--line-soft)',
           }}
         >
+          <DataRow label="STATUS"  value={route.status.toUpperCase()} />
+          <DataRow label="VERTICES" value={String(route.spark.length * 12)} />
           <DataRow label="SURFACE" value="SINGLETRACK" />
-          <DataRow label="EXPOSURE" value="PARTIAL SHADE" />
-          <DataRow label="WATER CROSSINGS" value="2" />
-          <DataRow label="VERTICES" value="142" />
-          <DataRow label="LAST EDITED" value="APR 22" unit="2026" />
+          <DataRow label="LAST EDITED" value="APR 25" unit="2026" />
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}>
             <span className="stat-label">OPTIMIZER TARGET</span>
-            <span
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 13,
-                color: 'var(--blaze)',
-              }}
-            >
-              7.0<span style={{ color: 'var(--moss)' }}>%</span> · cap 12%
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, color: accent }}>
+              {tagToTargetText[route.status]}
             </span>
           </div>
         </div>

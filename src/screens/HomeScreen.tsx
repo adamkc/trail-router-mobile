@@ -322,7 +322,7 @@ export function HomeScreen() {
             <button
               key={r.id}
               type="button"
-              onClick={() => navigate('/details')}
+              onClick={() => navigate(`/details/${r.id}`)}
               style={{
                 flexShrink: 0,
                 width: 118,

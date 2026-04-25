@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon, type IconName } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
-import { MapPin, MapActiveVertex, FitBoundsToCoords } from '../components/MapMarkers';
+import { MapPin, MapActiveVertex, MapDraggableVertex, FitBoundsToCoords } from '../components/MapMarkers';
 import { SlopeRibbon } from '../components/SlopeRibbon';
 import { svgArrayToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
 
@@ -29,8 +29,9 @@ const TOOLS: Array<{ icon: IconName; label: EditorTool }> = [
 export function VertexEditorScreen() {
   const navigate = useNavigate();
   const [activeTool, setActiveTool] = useState<EditorTool>('MOVE');
-  const trailGeo = useMemo(() => svgArrayToGeo(TRAIL_SVG), []);
-  const activeVertex = trailGeo[ACTIVE_IDX];
+  const originalGeo = useMemo(() => svgArrayToGeo(TRAIL_SVG), []);
+  const [coords, setCoords] = useState<Array<[number, number]>>(originalGeo);
+  const [activeIdx, setActiveIdx] = useState(ACTIVE_IDX);
   const blaze = resolveCssVar('var(--blaze)');
   const topo = resolveCssVar('var(--topo)');
 
@@ -44,6 +45,32 @@ export function VertexEditorScreen() {
     }
   };
 
+  const moveVertex = useCallback((i: number, lng: number, lat: number) => {
+    setCoords((prev) => {
+      const next = prev.slice();
+      next[i] = [lng, lat];
+      return next;
+    });
+  }, []);
+
+  const editedCount = coords.reduce(
+    (acc, c, i) => acc + (c[0] !== originalGeo[i][0] || c[1] !== originalGeo[i][1] ? 1 : 0),
+    0,
+  );
+  const dirty = editedCount > 0;
+
+  const handleDiscard = () => {
+    if (dirty) setCoords(originalGeo);
+    else navigate('/details');
+  };
+  const handleSave = () => {
+    // For now, "save" just exits — the trail is local state, not persisted.
+    // Persistence will hook into the library store when we have per-route geometry.
+    navigate('/details');
+  };
+
+  const activeVertex = coords[activeIdx];
+
   return (
     <div className="screen">
       <StatusBar />
@@ -51,21 +78,36 @@ export function VertexEditorScreen() {
       {/* Map */}
       <div style={{ position: 'absolute', inset: 0 }}>
         <MapCanvas center={HAYFORK} zoom={15}>
-          <FitBoundsToCoords coords={trailGeo} padding={48} />
-          <MapGeoLine id="edit-trail" coords={trailGeo} color={blaze} width={3} onTop />
-          {/* Per-vertex dot — frozen idx use topo, others use bone */}
-          {trailGeo.map((coord, i) =>
-            i === ACTIVE_IDX ? null : (
-              <MapPin
+          <FitBoundsToCoords coords={originalGeo} padding={48} />
+          <MapGeoLine id="edit-trail" coords={coords} color={blaze} width={3} onTop />
+          {coords.map((coord, i) => {
+            if (i === activeIdx) return null;
+            if (FROZEN_IDX.includes(i)) {
+              // Frozen endpoints — non-draggable, topo-tinted.
+              return <MapPin key={i} coord={coord} background={topo} size={10} ringOpacity={0} />;
+            }
+            // All other vertices: draggable; tap to make active.
+            return (
+              <MapDraggableVertex
                 key={i}
                 coord={coord}
-                background={FROZEN_IDX.includes(i) ? topo : '#E8E4D8'}
-                size={10}
-                ringOpacity={0}
+                color="#E8E4D8"
+                size={12}
+                onDrag={(lng, lat) => moveVertex(i, lng, lat)}
+                onSelect={() => setActiveIdx(i)}
               />
-            ),
-          )}
+            );
+          })}
+          {/* Active vertex — dashed-ring highlight, also draggable */}
           <MapActiveVertex coord={activeVertex} color={blaze} />
+          {!FROZEN_IDX.includes(activeIdx) && (
+            <MapDraggableVertex
+              coord={activeVertex}
+              color={blaze}
+              size={16}
+              onDrag={(lng, lat) => moveVertex(activeIdx, lng, lat)}
+            />
+          )}
         </MapCanvas>
       </div>
 
@@ -123,7 +165,7 @@ export function VertexEditorScreen() {
                 letterSpacing: '0.08em',
               }}
             >
-              VERTEX 5 / 10 · UNSAVED
+              VERTEX {activeIdx + 1} / {coords.length} · {dirty ? `${editedCount} EDITED` : 'CLEAN'}
             </div>
           </div>
           <div className="chip blaze" style={{ padding: '2px 8px' }}>EDIT</div>
@@ -298,17 +340,18 @@ export function VertexEditorScreen() {
               type="button"
               className="btn btn-ghost"
               style={{ flex: 1, padding: '10px 12px', fontSize: 13 }}
-              onClick={() => navigate('/details')}
+              onClick={handleDiscard}
             >
-              Discard
+              {dirty ? 'Revert' : 'Discard'}
             </button>
             <button
               type="button"
               className="btn btn-primary"
-              style={{ flex: 1, padding: '10px 12px', fontSize: 13 }}
-              onClick={() => navigate('/details')}
+              style={{ flex: 1, padding: '10px 12px', fontSize: 13, opacity: dirty ? 1 : 0.7 }}
+              onClick={handleSave}
+              disabled={!dirty}
             >
-              <Icon name="download" size={14} /> Save 7 edits
+              <Icon name="download" size={14} /> {dirty ? `Save ${editedCount} edit${editedCount === 1 ? '' : 's'}` : 'Save'}
             </button>
           </div>
         </div>

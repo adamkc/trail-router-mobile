@@ -43,7 +43,12 @@ export function LibraryScreen() {
   const navigate = useNavigate();
   const allRoutes = useLibrary((s) => s.routes);
   const [segment, setSegment] = useState<Segment>('ALL');
-  const ROUTES = allRoutes.filter((r) => SEGMENT_PREDICATE[segment](r.status));
+  const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const q = search.trim().toLowerCase();
+  const ROUTES = allRoutes
+    .filter((r) => SEGMENT_PREDICATE[segment](r.status))
+    .filter((r) => !q || r.name.toLowerCase().includes(q));
   return (
     <div className="screen">
       <StatusBar />
@@ -66,21 +71,59 @@ export function LibraryScreen() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            {(['search', 'filter'] as const).map((n) => (
-              <div
-                key={n}
-                style={{
-                  width: 40, height: 40, borderRadius: 12,
-                  background: 'var(--surface-2)',
-                  display: 'grid', placeItems: 'center',
-                  border: '1px solid var(--line-soft)',
-                }}
-              >
-                <Icon name={n} size={18} />
-              </div>
-            ))}
+            <button
+              type="button"
+              onClick={() => { setSearchOpen((v) => !v); if (searchOpen) setSearch(''); }}
+              aria-label={searchOpen ? 'Close search' : 'Search routes'}
+              style={{
+                width: 40, height: 40, borderRadius: 12,
+                background: searchOpen ? 'var(--blaze)' : 'var(--surface-2)',
+                color: searchOpen ? '#1A1208' : 'var(--bone)',
+                display: 'grid', placeItems: 'center',
+                border: '1px solid var(--line-soft)',
+              }}
+            >
+              <Icon name={searchOpen ? 'close' : 'search'} size={18} />
+            </button>
+            <button
+              type="button"
+              aria-label="Filter"
+              style={{
+                width: 40, height: 40, borderRadius: 12,
+                background: 'var(--surface-2)',
+                color: 'var(--bone)',
+                display: 'grid', placeItems: 'center',
+                border: '1px solid var(--line-soft)',
+              }}
+            >
+              <Icon name="filter" size={18} />
+            </button>
           </div>
         </div>
+
+        {searchOpen && (
+          <input
+            type="search"
+            autoFocus
+            placeholder="Search routes…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{
+              display: 'block',
+              width: '100%',
+              marginTop: 12,
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: 'var(--surface-2)',
+              border: '1px solid var(--line-soft)',
+              color: 'var(--bone)',
+              fontFamily: 'var(--font-body)',
+              fontSize: 14,
+              outline: 'none',
+              caretColor: 'var(--blaze)',
+            }}
+          />
+        )}
 
         {/* Summary strip */}
         <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
@@ -132,11 +175,25 @@ export function LibraryScreen() {
 
       {/* Routes list */}
       <div style={{ flex: 1, overflow: 'auto', padding: '0 20px 20px' }}>
+        {ROUTES.length === 0 && (
+          <div
+            style={{
+              padding: '32px 12px',
+              textAlign: 'center',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              color: 'var(--moss)',
+              letterSpacing: '0.06em',
+            }}
+          >
+            {q ? `NO ROUTES MATCH "${search}"` : `NO ${segment} ROUTES`}
+          </div>
+        )}
         {ROUTES.map((r, i) => (
           <button
             key={r.id}
             type="button"
-            onClick={() => navigate('/details')}
+            onClick={() => navigate(`/details/${r.id}`)}
             style={{
               background: 'var(--surface)',
               border: '1px solid var(--line-soft)',

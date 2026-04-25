@@ -126,6 +126,67 @@ export function MapLabel({
   return null;
 }
 
+/** Draggable vertex — a small dot the user can pick up and reposition on the map. */
+export function MapDraggableVertex({
+  coord,
+  color = '#E8E4D8',
+  size = 12,
+  onDrag,
+  onSelect,
+  selected = false,
+}: {
+  coord: [number, number];
+  color?: string;
+  size?: number;
+  onDrag: (lng: number, lat: number) => void;
+  onSelect?: () => void;
+  selected?: boolean;
+}) {
+  const { map } = useMapInstance();
+  const markerRef = useRef<maplibregl.Marker | null>(null);
+  // Refs so the marker's MapLibre callbacks always see the latest props
+  // without recreating the marker on every render.
+  const onDragRef = useRef(onDrag);
+  onDragRef.current = onDrag;
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+
+  useEffect(() => {
+    if (!map) return;
+    const el = document.createElement('div');
+    el.style.cssText = `
+      width: ${size}px; height: ${size}px; border-radius: 50%;
+      background: ${color}; border: 2px solid #12160F;
+      cursor: grab; touch-action: none;
+      box-shadow: ${selected ? `0 0 0 3px ${color}55` : 'none'};
+    `;
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onSelectRef.current?.();
+    });
+    const marker = new maplibregl.Marker({ element: el, draggable: true })
+      .setLngLat(coord)
+      .addTo(map);
+    marker.on('dragend', () => {
+      const ll = marker.getLngLat();
+      onDragRef.current(ll.lng, ll.lat);
+    });
+    markerRef.current = marker;
+    return () => {
+      marker.remove();
+      markerRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, color, size, selected]);
+
+  // External coord updates (e.g. Discard reverting state) push through to the marker.
+  useEffect(() => {
+    if (markerRef.current) markerRef.current.setLngLat(coord);
+  }, [coord[0], coord[1]]);
+
+  return null;
+}
+
 /** Active vertex highlight (dashed ring + fill — used by Vertex Editor). */
 export function MapActiveVertex({ coord, color = '#E88A3C' }: { coord: [number, number]; color?: string }) {
   const { map } = useMapInstance();

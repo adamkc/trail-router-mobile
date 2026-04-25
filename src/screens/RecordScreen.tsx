@@ -1,14 +1,15 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import maplibregl from 'maplibre-gl';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon } from '../components/Icon';
-import { MapCanvas } from '../components/MapCanvas';
-import { TrailLine } from '../components/TrailLine';
+import { MapCanvas, useMapInstance } from '../components/MapCanvas';
+import { MapGeoLine } from '../components/MapGeoLine';
 import { ElevChart } from '../components/ElevChart';
-import { useRecording } from '../store/recording';
+import { useRecording, type GpsState } from '../store/recording';
 
-const FALLBACK_CURSOR: [number, number] = [40, 480];
+const HAYFORK: [number, number] = [-122.5208, 40.7289];
 
 export function RecordScreen() {
   const navigate = useNavigate();
@@ -18,12 +19,15 @@ export function RecordScreen() {
   const gain         = useRecording((s) => s.gain);
   const currentGrade = useRecording((s) => s.currentGrade);
   const targetGrade  = useRecording((s) => s.targetGrade);
-  const track        = useRecording((s) => s.track);
+  const geoTrack     = useRecording((s) => s.geoTrack);
+  const gps          = useRecording((s) => s.gps);
   const start        = useRecording((s) => s.start);
   const pause        = useRecording((s) => s.pause);
   const resume       = useRecording((s) => s.resume);
   const stop         = useRecording((s) => s.stop);
-  const tick         = useRecording((s) => s.tick);
+  const bumpElapsed  = useRecording((s) => s.bumpElapsed);
+  const pushFix      = useRecording((s) => s.pushFix);
+  const setGpsState  = useRecording((s) => s.setGpsState);
   const addWaypoint  = useRecording((s) => s.addWaypoint);
 
   // Auto-start a recording if the user lands here with no active session.
@@ -33,18 +37,60 @@ export function RecordScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 1Hz timer, active while recording.
+  // 1Hz elapsed counter while recording.
   useEffect(() => {
     if (status !== 'recording') return;
-    const id = setInterval(tick, 1000);
+    const id = setInterval(bumpElapsed, 1000);
     return () => clearInterval(id);
-  }, [status, tick]);
+  }, [status, bumpElapsed]);
+
+  // Real GPS via navigator.geolocation; falls back to a slow synthetic walk
+  // around Hayfork if permission is denied or the API is unavailable.
+  useEffect(() => {
+    if (status !== 'recording') return;
+    let watchId: number | null = null;
+    let simInterval: number | null = null;
+
+    const startSim = () => {
+      setGpsState('simulated');
+      // Walk roughly NE from Hayfork at ~3 m every 2s.
+      let i = 0;
+      simInterval = window.setInterval(() => {
+        i += 1;
+        const drift = i * 0.00003;
+        const wobble = Math.sin(i / 4) * 0.00002;
+        pushFix(HAYFORK[0] + drift, HAYFORK[1] + drift * 0.6 + wobble, 420 + i * 0.6);
+      }, 2000);
+    };
+
+    if (!navigator.geolocation) {
+      setGpsState('unavailable');
+      startSim();
+    } else {
+      setGpsState('requesting');
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          setGpsState('tracking');
+          pushFix(pos.coords.longitude, pos.coords.latitude, pos.coords.altitude);
+        },
+        (err) => {
+          setGpsState(err.code === err.PERMISSION_DENIED ? 'denied' : 'unavailable');
+          startSim();
+        },
+        { enableHighAccuracy: true, maximumAge: 1000, timeout: 8000 },
+      );
+    }
+
+    return () => {
+      if (watchId != null) navigator.geolocation.clearWatch(watchId);
+      if (simInterval != null) clearInterval(simInterval);
+    };
+  }, [status, pushFix, setGpsState]);
 
   const hrs = Math.floor(elapsed / 3600);
   const mm = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
   const ss = String(elapsed % 60).padStart(2, '0');
   const overTarget = currentGrade > targetGrade + 1;
-  const cursor = track.length > 0 ? track[track.length - 1] : FALLBACK_CURSOR;
   const isPaused = status === 'paused';
 
   const handleTogglePause = () => {
@@ -66,24 +112,11 @@ export function RecordScreen() {
 
       {/* Map layer */}
       <div style={{ position: 'absolute', inset: 0 }}>
-        <MapCanvas>
-          <TrailLine points={track} color="var(--blaze)" width={4} />
-          <svg
-            viewBox="0 0 412 600"
-            preserveAspectRatio="xMidYMid slice"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-          >
-            {track.length > 0 && (
-              <circle cx={track[0][0]} cy={track[0][1]} r="6" fill="var(--good)" stroke="#12160F" strokeWidth="1.5" />
-            )}
-            {status === 'recording' && (
-              <circle cx={cursor[0]} cy={cursor[1]} r="10" fill="var(--blaze)" opacity="0.25">
-                <animate attributeName="r" values="10;22;10" dur="1.6s" repeatCount="indefinite" />
-                <animate attributeName="opacity" values="0.4;0;0.4" dur="1.6s" repeatCount="indefinite" />
-              </circle>
-            )}
-            <circle cx={cursor[0]} cy={cursor[1]} r="6" fill="var(--bone)" stroke="var(--blaze)" strokeWidth="2" />
-          </svg>
+        <MapCanvas center={geoTrack[geoTrack.length - 1] ?? HAYFORK} zoom={16}>
+          <MapGeoLine id="rec-track" coords={geoTrack} color="#E88A3C" width={4} onTop />
+          <FollowUserCamera coord={geoTrack[geoTrack.length - 1] ?? null} active={status === 'recording'} />
+          <MapDot coord={geoTrack[0] ?? null} color="oklch(0.74 0.14 145)" outerColor="#12160F" size={14} />
+          <MapCursor coord={geoTrack[geoTrack.length - 1] ?? null} pulse={status === 'recording'} />
         </MapCanvas>
       </div>
 
@@ -111,6 +144,17 @@ export function RecordScreen() {
             />
             <div className="stat-label" style={{ color: isPaused ? 'var(--moss)' : 'var(--danger)' }}>
               {isPaused ? 'PAUSED' : 'RECORDING'}
+            </div>
+            <div
+              style={{
+                marginLeft: 'auto',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9,
+                letterSpacing: '0.08em',
+                color: gpsBadgeColor(gps),
+              }}
+            >
+              GPS · {gpsBadgeLabel(gps)}
             </div>
           </div>
           <div
@@ -175,7 +219,7 @@ export function RecordScreen() {
                 stroke={overTarget ? 'var(--warn)' : 'var(--good)'}
                 strokeWidth="3"
                 strokeLinecap="round"
-                strokeDasharray={`${currentGrade * 5.5} 138`}
+                strokeDasharray={`${Math.abs(currentGrade) * 5.5} 138`}
                 transform="rotate(-90 27 27)"
               />
             </svg>
@@ -331,6 +375,8 @@ export function RecordScreen() {
   );
 }
 
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
 function formatPace(elapsedSec: number, distanceKm: number): string {
   const secPerKm = elapsedSec / distanceKm;
   const m = Math.floor(secPerKm / 60);
@@ -343,4 +389,77 @@ function elevationSeries(currentGain: number): number[] {
   const end = start + currentGain;
   const n = 8;
   return Array.from({ length: n }, (_, i) => Math.round(start + ((end - start) * i) / (n - 1)));
+}
+
+const gpsBadgeLabel = (g: GpsState): string =>
+  g === 'tracking'   ? 'FIX'
+  : g === 'simulated'  ? 'SIM'
+  : g === 'requesting' ? '...'
+  : g === 'denied'     ? 'DENIED'
+  : g === 'unavailable'? 'OFF'
+  : '—';
+
+const gpsBadgeColor = (g: GpsState): string =>
+  g === 'tracking'   ? 'var(--good)'
+  : g === 'simulated'  ? 'var(--topo)'
+  : g === 'requesting' ? 'var(--moss)'
+  : 'var(--moss)';
+
+// ─── Map child components: keep the map's MapLibre instance alive while
+//     reflecting reactive coords. They render null but manage markers/cameras.
+
+function FollowUserCamera({ coord, active }: { coord: [number, number] | null; active: boolean }) {
+  const { map } = useMapInstance();
+  useEffect(() => {
+    if (!map || !coord || !active) return;
+    map.easeTo({ center: coord, duration: 600 });
+  }, [map, coord?.[0], coord?.[1], active]);
+  return null;
+}
+
+function MapDot({
+  coord, color, outerColor, size,
+}: { coord: [number, number] | null; color: string; outerColor: string; size: number }) {
+  const { map } = useMapInstance();
+  const ref = useRef<maplibregl.Marker | null>(null);
+  useEffect(() => {
+    if (!map || !coord) return;
+    const el = document.createElement('div');
+    el.style.cssText = `
+      width: ${size}px; height: ${size}px; border-radius: 50%;
+      background: ${color}; border: 2px solid ${outerColor};
+      box-shadow: 0 0 0 2px ${color}55;
+    `;
+    const marker = new maplibregl.Marker({ element: el }).setLngLat(coord).addTo(map);
+    ref.current = marker;
+    return () => { marker.remove(); ref.current = null; };
+  }, [map, color, outerColor, size]);
+  useEffect(() => {
+    if (ref.current && coord) ref.current.setLngLat(coord);
+  }, [coord?.[0], coord?.[1]]);
+  return null;
+}
+
+function MapCursor({ coord, pulse }: { coord: [number, number] | null; pulse: boolean }) {
+  const { map } = useMapInstance();
+  const ref = useRef<maplibregl.Marker | null>(null);
+  useEffect(() => {
+    if (!map || !coord) return;
+    const el = document.createElement('div');
+    el.innerHTML = `
+      <div style="width:30px;height:30px;position:relative;">
+        ${pulse ? `
+          <div style="position:absolute;inset:0;border-radius:50%;background:#E88A3C;opacity:0.25;animation:pulse-ring 1.6s infinite;"></div>
+        ` : ''}
+        <div style="position:absolute;left:9px;top:9px;width:12px;height:12px;border-radius:50%;background:#E8E4D8;border:2px solid #E88A3C;"></div>
+      </div>
+    `;
+    const marker = new maplibregl.Marker({ element: el }).setLngLat(coord).addTo(map);
+    ref.current = marker;
+    return () => { marker.remove(); ref.current = null; };
+  }, [map, pulse]);
+  useEffect(() => {
+    if (ref.current && coord) ref.current.setLngLat(coord);
+  }, [coord?.[0], coord?.[1]]);
+  return null;
 }

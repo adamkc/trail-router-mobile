@@ -1,15 +1,20 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon, type IconName } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
-import { TrailLine } from '../components/TrailLine';
+import { MapGeoLine } from '../components/MapGeoLine';
+import { MapPin, MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers';
 import { ElevChart } from '../components/ElevChart';
+import { svgArrayToGeo, svgToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
 
-const TRAIL: Array<[number, number]> = [
+const TRAIL_SVG: Array<[number, number]> = [
   [40, 480], [70, 440], [110, 410], [150, 420], [180, 380],
   [220, 340], [260, 300], [290, 250], [330, 210], [360, 170],
 ];
+
+const VISTA_WAYPOINT_SVG: [number, number] = [220, 340];
 
 const CONTROLS: Array<{ icon: IconName; label: string }> = [
   { icon: 'layers',   label: 'HILL' },
@@ -20,29 +25,22 @@ const CONTROLS: Array<{ icon: IconName; label: string }> = [
 
 export function MapViewerScreen() {
   const navigate = useNavigate();
-  const start = TRAIL[0];
-  const end = TRAIL[TRAIL.length - 1];
+  const trailGeo = useMemo(() => svgArrayToGeo(TRAIL_SVG), []);
+  const vistaGeo = useMemo(() => svgToGeo(VISTA_WAYPOINT_SVG), []);
+  const start = trailGeo[0];
+  const end = trailGeo[trailGeo.length - 1];
 
   return (
     <div className="screen">
       <StatusBar />
 
       <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
-        <MapCanvas>
-          <TrailLine points={TRAIL} />
-          {/* Start / end / waypoint markers */}
-          <svg
-            viewBox="0 0 412 600"
-            preserveAspectRatio="xMidYMid slice"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-          >
-            <circle cx={start[0]} cy={start[1]} r="7" fill="var(--good)" stroke="#12160F" strokeWidth="2" />
-            <circle cx={end[0]}   cy={end[1]}   r="7" fill="var(--danger)" stroke="#12160F" strokeWidth="2" />
-            <g transform={`translate(${220}, ${340})`}>
-              <circle r="10" fill="var(--topo)" opacity="0.2" />
-              <circle r="5"  fill="var(--topo)" stroke="#12160F" strokeWidth="1.5" />
-            </g>
-          </svg>
+        <MapCanvas center={HAYFORK} zoom={14}>
+          <FitBoundsToCoords coords={trailGeo} padding={48} />
+          <MapGeoLine id="map-trail" coords={trailGeo} color={resolveCssVar('var(--blaze)')} width={4} onTop />
+          <MapPin coord={start} background={resolveCssVar('var(--good)')}   size={16} />
+          <MapPin coord={end}   background={resolveCssVar('var(--danger)')} size={16} />
+          <MapWaypoint coord={vistaGeo} icon="V" color={resolveCssVar('var(--topo)')} size={20} />
         </MapCanvas>
 
         {/* Floating top bar — back + trail name + coords */}

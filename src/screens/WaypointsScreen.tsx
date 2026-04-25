@@ -1,9 +1,25 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
-import { TrailLine } from '../components/TrailLine';
+import { MapGeoLine } from '../components/MapGeoLine';
+import { MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers';
+import { svgArrayToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
+
+const TRAIL_SVG: Array<[number, number]> = [
+  [40, 500], [80, 470], [130, 450], [175, 420], [220, 390],
+  [260, 360], [300, 320], [340, 280], [370, 230],
+];
+
+const MAP_PINS_SVG: Array<{ pos: [number, number]; icon: string; color: string }> = [
+  { pos: [80, 470],  icon: 'W', color: 'var(--topo)'   },
+  { pos: [175, 420], icon: 'H', color: 'var(--danger)' },
+  { pos: [260, 360], icon: 'V', color: 'var(--warn)'   },
+  { pos: [300, 320], icon: 'P', color: 'var(--good)'   },
+  { pos: [370, 230], icon: 'C', color: 'var(--bone)'   },
+];
 
 interface Waypoint {
   id: number;
@@ -23,18 +39,15 @@ const WAYPOINTS: Waypoint[] = [
   { id: 5, icon: 'C', type: 'Camp',   color: 'var(--bone)',   label: 'Meadow bivy',        note: 'Flat · wind-protected',    dist: '3.8 km' },
 ];
 
-const MAP_PINS: Array<[number, number, string, string]> = [
-  [80, 470,  'W', 'var(--topo)'],
-  [175, 420, 'H', 'var(--danger)'],
-  [260, 360, 'V', 'var(--warn)'],
-  [300, 320, 'P', 'var(--good)'],
-  [370, 230, 'C', 'var(--bone)'],
-];
-
 const FILTER_CHIPS = ['ALL 5', 'WATER 1', 'HAZARD 1', 'VISTA 1', 'PHOTO 1', 'CAMP 1'];
 
 export function WaypointsScreen() {
   const navigate = useNavigate();
+  const trailGeo = useMemo(() => svgArrayToGeo(TRAIL_SVG), []);
+  const pinsGeo  = useMemo(
+    () => MAP_PINS_SVG.map((p) => ({ ...p, coord: svgArrayToGeo([p.pos])[0] })),
+    [],
+  );
   return (
     <div className="screen">
       <StatusBar />
@@ -90,37 +103,12 @@ export function WaypointsScreen() {
           border: '1px solid var(--line-soft)',
         }}
       >
-        <MapCanvas>
-          <TrailLine
-            points={[
-              [40, 500], [80, 470], [130, 450], [175, 420], [220, 390],
-              [260, 360], [300, 320], [340, 280], [370, 230],
-            ]}
-            color="var(--blaze)"
-            width={2.5}
-          />
-          <svg
-            viewBox="0 0 412 600"
-            preserveAspectRatio="xMidYMid slice"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-          >
-            {MAP_PINS.map((w, i) => (
-              <g key={i} transform={`translate(${w[0]}, ${w[1]})`}>
-                <circle r="12" fill={w[3]} opacity="0.2" />
-                <circle r="8" fill="var(--surface)" stroke={w[3]} strokeWidth="1.5" />
-                <text
-                  y="3"
-                  textAnchor="middle"
-                  fontFamily="var(--font-mono)"
-                  fontSize="8"
-                  fontWeight="700"
-                  fill={w[3]}
-                >
-                  {w[2]}
-                </text>
-              </g>
-            ))}
-          </svg>
+        <MapCanvas center={HAYFORK} zoom={14} interactive={false}>
+          <FitBoundsToCoords coords={trailGeo} padding={36} />
+          <MapGeoLine id="wp-trail" coords={trailGeo} color={resolveCssVar('var(--blaze)')} width={2.5} onTop />
+          {pinsGeo.map((p) => (
+            <MapWaypoint key={p.icon} coord={p.coord} icon={p.icon} color={resolveCssVar(p.color)} size={20} />
+          ))}
         </MapCanvas>
       </div>
 

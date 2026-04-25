@@ -1,12 +1,15 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon, type IconName } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
-import { TrailLine } from '../components/TrailLine';
+import { MapGeoLine } from '../components/MapGeoLine';
+import { MapPin, MapActiveVertex, FitBoundsToCoords } from '../components/MapMarkers';
 import { SlopeRibbon } from '../components/SlopeRibbon';
+import { svgArrayToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
 
-const TRAIL: Array<[number, number]> = [
+const TRAIL_SVG: Array<[number, number]> = [
   [50, 500], [85, 470], [125, 455], [165, 440], [200, 420],
   [240, 400], [275, 370], [310, 335], [340, 295], [370, 250],
 ];
@@ -24,7 +27,10 @@ const TOOLS: Array<{ icon: IconName; label: string; active?: boolean }> = [
 
 export function VertexEditorScreen() {
   const navigate = useNavigate();
-  const activeVertex = TRAIL[ACTIVE_IDX];
+  const trailGeo = useMemo(() => svgArrayToGeo(TRAIL_SVG), []);
+  const activeVertex = trailGeo[ACTIVE_IDX];
+  const blaze = resolveCssVar('var(--blaze)');
+  const topo = resolveCssVar('var(--topo)');
 
   return (
     <div className="screen">
@@ -32,39 +38,22 @@ export function VertexEditorScreen() {
 
       {/* Map */}
       <div style={{ position: 'absolute', inset: 0 }}>
-        <MapCanvas>
-          <TrailLine points={TRAIL} color="var(--blaze)" width={3} showVertices frozenIdx={FROZEN_IDX} />
-          {/* Active vertex highlight + move handles */}
-          <svg
-            viewBox="0 0 412 600"
-            preserveAspectRatio="xMidYMid slice"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-          >
-            <circle
-              cx={activeVertex[0]}
-              cy={activeVertex[1]}
-              r="16"
-              fill="none"
-              stroke="var(--blaze)"
-              strokeWidth="1.5"
-              strokeDasharray="3 3"
-            />
-            <circle cx={activeVertex[0]} cy={activeVertex[1]} r="9" fill="var(--blaze)" stroke="#12160F" strokeWidth="2" />
-            <path
-              d={`M ${activeVertex[0] - 22} ${activeVertex[1] - 10} l -8 5 l 8 5`}
-              fill="none"
-              stroke="var(--bone)"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-            <path
-              d={`M ${activeVertex[0] + 22} ${activeVertex[1] + 10} l 8 -5 l -8 -5`}
-              fill="none"
-              stroke="var(--bone)"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
+        <MapCanvas center={HAYFORK} zoom={15}>
+          <FitBoundsToCoords coords={trailGeo} padding={48} />
+          <MapGeoLine id="edit-trail" coords={trailGeo} color={blaze} width={3} onTop />
+          {/* Per-vertex dot — frozen idx use topo, others use bone */}
+          {trailGeo.map((coord, i) =>
+            i === ACTIVE_IDX ? null : (
+              <MapPin
+                key={i}
+                coord={coord}
+                background={FROZEN_IDX.includes(i) ? topo : '#E8E4D8'}
+                size={10}
+                ringOpacity={0}
+              />
+            ),
+          )}
+          <MapActiveVertex coord={activeVertex} color={blaze} />
         </MapCanvas>
       </div>
 

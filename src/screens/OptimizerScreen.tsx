@@ -1,22 +1,27 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
-import { TrailLine } from '../components/TrailLine';
+import { MapGeoLine } from '../components/MapGeoLine';
+import { MapPin, FitBoundsToCoords } from '../components/MapMarkers';
 import { ElevChart } from '../components/ElevChart';
+import { svgArrayToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
 
-const BEFORE: Array<[number, number]> = [
+const BEFORE_SVG: Array<[number, number]> = [
   [60, 500], [90, 460], [130, 420], [170, 370], [210, 310], [250, 260], [300, 210], [340, 170],
 ];
 
-const AFTER: Array<[number, number]> = [
+const AFTER_SVG: Array<[number, number]> = [
   [60, 500], [95, 475], [135, 455], [115, 420], [155, 395], [200, 380], [180, 345],
   [220, 320], [260, 300], [245, 265], [285, 245], [320, 220], [340, 170],
 ];
 
 export function OptimizerScreen() {
   const navigate = useNavigate();
+  const beforeGeo = useMemo(() => svgArrayToGeo(BEFORE_SVG), []);
+  const afterGeo  = useMemo(() => svgArrayToGeo(AFTER_SVG), []);
   return (
     <div className="screen" style={{ background: 'var(--bg)' }}>
       <StatusBar />
@@ -73,20 +78,16 @@ export function OptimizerScreen() {
           border: '1px solid var(--line-soft)',
         }}
       >
-        <MapCanvas>
-          <TrailLine points={BEFORE} color="var(--moss)" width={2.5} dashed />
-          <TrailLine points={AFTER} color="var(--blaze)" width={3.5} animate />
-          <svg
-            viewBox="0 0 412 600"
-            preserveAspectRatio="xMidYMid slice"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-          >
-            <circle cx={60} cy={500}  r="6" fill="var(--good)"   stroke="#12160F" strokeWidth="1.5" />
-            <circle cx={340} cy={170} r="6" fill="var(--danger)" stroke="#12160F" strokeWidth="1.5" />
-            {AFTER.slice(1, -1).map((p, i) => (
-              <circle key={i} cx={p[0]} cy={p[1]} r="2.5" fill="var(--blaze)" opacity={0.6} />
-            ))}
-          </svg>
+        <MapCanvas center={HAYFORK} zoom={15} interactive={false}>
+          <FitBoundsToCoords coords={[...beforeGeo, ...afterGeo]} padding={36} />
+          <MapGeoLine id="opt-before" coords={beforeGeo} color={resolveCssVar('var(--moss)')} width={2.5} dashed glow={false} />
+          <MapGeoLine id="opt-after"  coords={afterGeo}  color={resolveCssVar('var(--blaze)')} width={3.5} onTop />
+          <MapPin coord={beforeGeo[0]}                       background={resolveCssVar('var(--good)')}   size={14} />
+          <MapPin coord={afterGeo[afterGeo.length - 1]}      background={resolveCssVar('var(--danger)')} size={14} />
+          {/* Inline vertices on the optimized path — small blaze dots */}
+          {afterGeo.slice(1, -1).map((coord, i) => (
+            <MapPin key={i} coord={coord} background={resolveCssVar('var(--blaze)')} size={6} ringOpacity={0} />
+          ))}
         </MapCanvas>
 
         {/* Legend */}

@@ -3,6 +3,7 @@ import type { RouteStatus } from './library';
 
 export type RecordingStatus = 'idle' | 'recording' | 'paused' | 'reviewing';
 export type SaveStatus = 'draft' | 'built' | 'survey';
+export type GpsState = 'unknown' | 'requesting' | 'tracking' | 'denied' | 'unavailable' | 'simulated';
 
 export interface CapturedWaypoint {
   id: string;
@@ -11,36 +12,46 @@ export interface CapturedWaypoint {
   color: string;
   label: string;
   t: string;
+  /** [lng, lat] of the point where the waypoint was captured. */
+  coord: [number, number];
 }
 
 interface RecordingState {
   status: RecordingStatus;
   elapsed: number;
+  /** km, accumulated via Haversine over the geo track. */
   distance: number;
+  /** meters, summed positive elevation deltas. */
   gain: number;
   currentGrade: number;
   targetGrade: number;
-  track: Array<[number, number]>;
+  /** Real geographic track [lng, lat][] — what gets drawn on the map and saved to the library. */
+  geoTrack: Array<[number, number]>;
+  /** Last known fix elevation (meters) — used to compute gain across ticks. */
+  lastElev: number | null;
   capturedWaypoints: CapturedWaypoint[];
   draftName: string;
   draftSaveStatus: SaveStatus;
+  gps: GpsState;
 
   start: () => void;
   pause: () => void;
   resume: () => void;
-  tick: () => void;
+  /** Append a fix from navigator.geolocation (or a simulator). */
+  pushFix: (lng: number, lat: number, elev: number | null, accuracy?: number) => void;
+  /** Bump the elapsed counter by one second. Called by the screen's 1Hz interval. */
+  bumpElapsed: () => void;
   addWaypoint: () => void;
   stop: () => void;
   discard: () => void;
+  setGpsState: (g: GpsState) => void;
   setDraftName: (n: string) => void;
   setDraftSaveStatus: (s: SaveStatus) => void;
 }
 
-const INITIAL_TRACK: Array<[number, number]> = [
-  [40, 480], [70, 460], [100, 440], [130, 430], [160, 415], [195, 405], [220, 395],
-];
+const HAYFORK: [number, number] = [-122.5208, 40.7289];
 
-const WAYPOINT_TEMPLATES: Omit<CapturedWaypoint, 'id' | 't'>[] = [
+const WAYPOINT_TEMPLATES: Omit<CapturedWaypoint, 'id' | 't' | 'coord'>[] = [
   { type: 'PHOTO',  icon: 'P', color: 'var(--topo)',   label: 'Creek crossing'      },
   { type: 'WATER',  icon: 'W', color: 'var(--topo)',   label: 'Spring — perennial?' },
   { type: 'HAZARD', icon: 'H', color: 'var(--danger)', label: 'Loose scree'         },
@@ -53,6 +64,20 @@ const formatT = (elapsed: number): string => {
   return `${m}:${String(s).padStart(2, '0')}`;
 };
 
+/** Haversine distance in km between two [lng, lat] points. */
+export function haversineKm(a: [number, number], b: [number, number]): number {
+  const R = 6371; // km
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b[1] - a[1]);
+  const dLng = toRad(b[0] - a[0]);
+  const lat1 = toRad(a[1]);
+  const lat2 = toRad(b[1]);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
 const initialState = () => ({
   status: 'idle' as RecordingStatus,
   elapsed: 0,
@@ -60,10 +85,12 @@ const initialState = () => ({
   gain: 0,
   currentGrade: 0,
   targetGrade: 7,
-  track: [] as Array<[number, number]>,
+  geoTrack: [] as Array<[number, number]>,
+  lastElev: null as number | null,
   capturedWaypoints: [] as CapturedWaypoint[],
   draftName: 'Hayfork Loop — Leg 2',
   draftSaveStatus: 'draft' as SaveStatus,
+  gps: 'unknown' as GpsState,
 });
 
 export const useRecording = create<RecordingState>((set) => ({
@@ -73,37 +100,58 @@ export const useRecording = create<RecordingState>((set) => ({
     set(() => ({
       ...initialState(),
       status: 'recording',
-      track: [INITIAL_TRACK[0]],
     })),
 
   pause: () => set({ status: 'paused' }),
   resume: () => set({ status: 'recording' }),
 
-  tick: () =>
+  pushFix: (lng, lat, elev) =>
     set((s) => {
       if (s.status !== 'recording') return s;
-      const nextElapsed = s.elapsed + 1;
-      const pointIdx = Math.min(Math.floor(nextElapsed / 3), INITIAL_TRACK.length - 1);
-      const track = INITIAL_TRACK.slice(0, pointIdx + 1);
-      const distance = Number((nextElapsed * 0.0017).toFixed(2));
-      const gain = Math.floor(nextElapsed * 0.1);
-      const currentGrade = Math.min(12, 4 + Math.sin(nextElapsed / 7) * 6);
+      const next: [number, number] = [lng, lat];
+      const prev = s.geoTrack[s.geoTrack.length - 1];
+
+      // Distance: cumulative Haversine.
+      const distance = prev
+        ? Number((s.distance + haversineKm(prev, next)).toFixed(3))
+        : 0;
+
+      // Gain: only accumulate positive elevation deltas (climbs).
+      let gain = s.gain;
+      let currentGrade = s.currentGrade;
+      if (elev != null && s.lastElev != null) {
+        const dElev = elev - s.lastElev;
+        if (dElev > 0) gain = Math.round(gain + dElev);
+        // Grade % = rise/run × 100. Need a horizontal delta to compute.
+        if (prev) {
+          const segKm = haversineKm(prev, next);
+          if (segKm > 0.001) {
+            currentGrade = Number(((dElev / (segKm * 1000)) * 100).toFixed(1));
+          }
+        }
+      }
+
       return {
-        elapsed: nextElapsed,
-        track,
+        geoTrack: [...s.geoTrack, next],
         distance,
         gain,
-        currentGrade: Number(currentGrade.toFixed(1)),
+        currentGrade,
+        lastElev: elev ?? s.lastElev,
       };
     }),
+
+  bumpElapsed: () =>
+    set((s) => (s.status === 'recording' ? { elapsed: s.elapsed + 1 } : s)),
 
   addWaypoint: () =>
     set((s) => {
       const template = WAYPOINT_TEMPLATES[s.capturedWaypoints.length % WAYPOINT_TEMPLATES.length];
+      const at: [number, number] = s.geoTrack[s.geoTrack.length - 1] ?? HAYFORK;
       const next: CapturedWaypoint = {
         ...template,
         id: `wp-${s.capturedWaypoints.length + 1}`,
         t: formatT(s.elapsed),
+        coord: at,
       };
       return { capturedWaypoints: [...s.capturedWaypoints, next] };
     }),
@@ -111,6 +159,7 @@ export const useRecording = create<RecordingState>((set) => ({
   stop: () => set({ status: 'reviewing' }),
   discard: () => set(initialState()),
 
+  setGpsState: (gps) => set({ gps }),
   setDraftName: (draftName) => set({ draftName }),
   setDraftSaveStatus: (draftSaveStatus) => set({ draftSaveStatus }),
 }));

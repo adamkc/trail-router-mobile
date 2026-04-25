@@ -1,14 +1,18 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon, type IconName } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
-import { TrailLine } from '../components/TrailLine';
+import { MapGeoLine } from '../components/MapGeoLine';
+import { MapPin, MapJunction, MapLabel, FitBoundsToCoords } from '../components/MapMarkers';
+import { svgArrayToGeo, svgToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
 
 interface TrailSegment {
   name: string;
   status: 'optimized' | 'built' | 'draft' | 'proposed';
   color: string;
+  /** Original SVG-coord points; converted to lng/lat at render time. */
   pts: Array<[number, number]>;
   solid: boolean;
 }
@@ -54,6 +58,18 @@ const NETWORK: TrailSegment[] = [
   },
 ];
 
+const TRAILHEAD_SVG: [number, number] = [40, 500];
+const PEAK_SVG: [number, number] = [380, 60];
+const JUNCTIONS_SVG: Array<[number, number]> = [[340, 150], [150, 410], [220, 350], [255, 320]];
+
+const LABELS_SVG: Array<{ pos: [number, number]; text: string; tone?: 'topo' }> = [
+  { pos: [55, 460],  text: 'HAYFORK LOOP' },
+  { pos: [370, 100], text: 'N. RIDGE' },
+  { pos: [40, 340],  text: 'CUTOFF' },
+  { pos: [285, 240], text: 'MANZ. SW' },
+  { pos: [130, 255], text: 'MEADOW (PROP)', tone: 'topo' },
+];
+
 const LEGEND_LAYERS: Array<{ label: string; color: string; n: number; solid: boolean; on: boolean }> = [
   { label: 'Optimized', color: 'var(--blaze)', n: 2, solid: true,  on: true },
   { label: 'Built',     color: 'var(--good)',  n: 7, solid: true,  on: true },
@@ -76,35 +92,53 @@ const SNAP_TOGGLES = [
 
 export function NetworkMapScreen() {
   const navigate = useNavigate();
+
+  // Project all SVG-coord trail data into lng/lat so it sits on the real map.
+  const geoNetwork = useMemo(
+    () => NETWORK.map((t) => ({ ...t, geo: svgArrayToGeo(t.pts), color: resolveCssVar(t.color) })),
+    [],
+  );
+  const geoTrailhead = useMemo(() => svgToGeo(TRAILHEAD_SVG), []);
+  const geoPeak = useMemo(() => svgToGeo(PEAK_SVG), []);
+  const geoJunctions = useMemo(() => svgArrayToGeo(JUNCTIONS_SVG), []);
+  const geoLabels = useMemo(
+    () => LABELS_SVG.map((l) => ({ ...l, coord: svgToGeo(l.pos) })),
+    [],
+  );
+
+  const allCoords = useMemo(() => geoNetwork.flatMap((t) => t.geo), [geoNetwork]);
+
   return (
     <div className="screen">
       <StatusBar />
 
       <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
-        <MapCanvas>
-          {NETWORK.map((t, i) => (
-            <TrailLine key={i} points={t.pts} color={t.color} width={t.solid ? 3 : 2.5} dashed={!t.solid} />
+        <MapCanvas center={HAYFORK} zoom={14}>
+          <FitBoundsToCoords coords={allCoords} padding={48} />
+          {geoNetwork.map((t) => (
+            <MapGeoLine
+              key={t.name}
+              id={`net-${t.name.replace(/\s+/g, '-').toLowerCase()}`}
+              coords={t.geo}
+              color={t.color}
+              width={t.solid ? 3 : 2.5}
+              dashed={!t.solid}
+              onTop={t.status === 'optimized'}
+            />
           ))}
-          {/* Trailheads / junctions + labels */}
-          <svg
-            viewBox="0 0 412 600"
-            preserveAspectRatio="xMidYMid slice"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-          >
-            <circle cx={40}  cy={500} r="6" fill="var(--good)"       stroke="#12160F" strokeWidth="1.5" />
-            <circle cx={380} cy={60}  r="6" fill="var(--danger)"     stroke="#12160F" strokeWidth="1.5" />
-            <circle cx={340} cy={150} r="5" fill="var(--surface-2)"  stroke="var(--bone)" strokeWidth="1.5" />
-            <circle cx={150} cy={410} r="5" fill="var(--surface-2)"  stroke="var(--bone)" strokeWidth="1.5" />
-            <circle cx={220} cy={350} r="5" fill="var(--surface-2)"  stroke="var(--bone)" strokeWidth="1.5" />
-            <circle cx={255} cy={320} r="5" fill="var(--surface-2)"  stroke="var(--bone)" strokeWidth="1.5" />
-            <g fontFamily="var(--font-mono)" fontSize="8" fill="var(--bone-dim)" letterSpacing="0.5">
-              <text x={55}  y={460}>HAYFORK LOOP</text>
-              <text x={370} y={100}>N. RIDGE</text>
-              <text x={40}  y={340}>CUTOFF</text>
-              <text x={285} y={240}>MANZ. SW</text>
-              <text x={130} y={255} fill="var(--topo)">MEADOW (PROP)</text>
-            </g>
-          </svg>
+          <MapPin coord={geoTrailhead} background={resolveCssVar('var(--good)')}   size={14} />
+          <MapPin coord={geoPeak}      background={resolveCssVar('var(--danger)')} size={14} />
+          {geoJunctions.map((coord, i) => (
+            <MapJunction key={i} coord={coord} size={11} />
+          ))}
+          {geoLabels.map((l) => (
+            <MapLabel
+              key={l.text}
+              coord={l.coord}
+              text={l.text}
+              color={l.tone === 'topo' ? resolveCssVar('var(--topo)') : '#BCB8AC'}
+            />
+          ))}
         </MapCanvas>
 
         {/* Top project switcher */}

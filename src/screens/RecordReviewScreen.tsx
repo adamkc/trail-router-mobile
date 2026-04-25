@@ -4,15 +4,26 @@ import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
-import { TrailLine } from '../components/TrailLine';
+import { MapGeoLine } from '../components/MapGeoLine';
+import { MapPin, MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers';
 import { ElevChart } from '../components/ElevChart';
 import { useRecording, draftSaveStatusToRoute, type SaveStatus } from '../store/recording';
 import { useLibrary } from '../store/library';
+import { resolveCssVar } from '../utils/geo';
 
-const FALLBACK_TRACK: Array<[number, number]> = [
-  [60, 500], [90, 475], [125, 455], [160, 440], [195, 420], [225, 400],
-  [260, 380], [290, 355], [320, 325], [350, 290], [370, 250], [380, 210],
-];
+const HAYFORK: [number, number] = [-122.5208, 40.7289];
+
+/** Synthetic geographic track around Hayfork — used when /review is opened without a recording. */
+const FALLBACK_GEO_TRACK: Array<[number, number]> = (() => {
+  const pts: Array<[number, number]> = [];
+  for (let i = 0; i < 12; i++) {
+    pts.push([
+      HAYFORK[0] + i * 0.0006 + Math.sin(i / 3) * 0.0003,
+      HAYFORK[1] + i * 0.0004 + Math.cos(i / 3) * 0.0002,
+    ]);
+  }
+  return pts;
+})();
 
 const SAVE_PILLS: Array<{ key: SaveStatus; label: string }> = [
   { key: 'draft',  label: 'DRAFT'  },
@@ -38,7 +49,7 @@ export function RecordReviewScreen() {
   const elapsed            = useRecording((s) => s.elapsed);
   const distance           = useRecording((s) => s.distance);
   const gain               = useRecording((s) => s.gain);
-  const track              = useRecording((s) => s.track);
+  const geoTrack           = useRecording((s) => s.geoTrack);
   const capturedWaypoints  = useRecording((s) => s.capturedWaypoints);
   const draftName          = useRecording((s) => s.draftName);
   const draftSaveStatus    = useRecording((s) => s.draftSaveStatus);
@@ -47,9 +58,9 @@ export function RecordReviewScreen() {
   const discard            = useRecording((s) => s.discard);
   const addRoute           = useLibrary((s) => s.addRoute);
 
-  // Fall back to a fake track if the user lands here with no recording — keeps the screen visually coherent.
-  const displayTrack = track.length >= 3 ? track : FALLBACK_TRACK;
-  const hasTrack = track.length >= 3;
+  // If the user landed here without a recording (e.g. via the canvas), use a synthetic track for fidelity.
+  const hasTrack = geoTrack.length >= 3;
+  const displayTrack = hasTrack ? geoTrack : FALLBACK_GEO_TRACK;
   const displayElapsed = elapsed > 0 ? elapsed : 32 * 60 + 18;
   const displayDistance = distance > 0 ? distance : 2.14;
   const displayGain = gain > 0 ? gain : 220;
@@ -57,7 +68,7 @@ export function RecordReviewScreen() {
   const elev = useMemo(() => elevationFromGain(displayGain), [displayGain]);
   const avgGrade = displayDistance > 0 ? ((displayGain / 10) / displayDistance).toFixed(1) : '0.0';
 
-  // The trimmed-out ends are stubbed — the design shows them dashed.
+  // The trimmed-out ends are stubbed — design shows ~8% off the start and ~10% off the end as dashed.
   const trimmedStart = Math.max(1, Math.floor(displayTrack.length * 0.08));
   const trimmedEnd = Math.max(1, Math.floor(displayTrack.length * 0.1));
   const mainSlice = displayTrack.slice(trimmedStart - 1, displayTrack.length - trimmedEnd + 1);
@@ -115,7 +126,7 @@ export function RecordReviewScreen() {
         </div>
       </div>
 
-      {/* Track map */}
+      {/* Track map — fits to the recorded extent */}
       <div
         style={{
           height: 220,
@@ -126,57 +137,16 @@ export function RecordReviewScreen() {
           border: '1px solid var(--line-soft)',
         }}
       >
-        <MapCanvas>
-          {hasTrack ? (
-            <>
-              {headSlice.length >= 2 && <TrailLine points={headSlice} color="var(--moss)" width={3} dashed />}
-              {mainSlice.length >= 2 && <TrailLine points={mainSlice} color="var(--blaze)" width={3.5} />}
-              {tailSlice.length >= 2 && <TrailLine points={tailSlice} color="var(--moss)" width={3} dashed />}
-            </>
-          ) : (
-            <>
-              <TrailLine points={FALLBACK_TRACK.slice(0, 2)} color="var(--moss)" width={3} dashed />
-              <TrailLine points={FALLBACK_TRACK.slice(1, 11)} color="var(--blaze)" width={3.5} />
-              <TrailLine points={FALLBACK_TRACK.slice(10)} color="var(--moss)" width={3} dashed />
-            </>
-          )}
-          <svg
-            viewBox="0 0 412 600"
-            preserveAspectRatio="xMidYMid slice"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
-          >
-            <circle cx={displayTrack[0][0]} cy={displayTrack[0][1]} r="6" fill="var(--good)"   stroke="#12160F" strokeWidth="1.5" />
-            <circle
-              cx={displayTrack[displayTrack.length - 1][0]}
-              cy={displayTrack[displayTrack.length - 1][1]}
-              r="6"
-              fill="var(--danger)"
-              stroke="#12160F"
-              strokeWidth="1.5"
-            />
-            {capturedWaypoints.map((w, i) => {
-              // Place captured waypoints along the track at evenly spaced fractions for the demo.
-              const frac = (i + 1) / (capturedWaypoints.length + 1);
-              const idx = Math.min(displayTrack.length - 1, Math.floor(displayTrack.length * frac));
-              const p = displayTrack[idx];
-              return (
-                <g key={w.id} transform={`translate(${p[0]}, ${p[1]})`}>
-                  <circle r="10" fill={w.color} opacity="0.25" />
-                  <circle r="6" fill={w.color} stroke="#12160F" strokeWidth="1.5" />
-                  <text
-                    y="2"
-                    textAnchor="middle"
-                    fontFamily="var(--font-mono)"
-                    fontSize="7"
-                    fontWeight="600"
-                    fill="#12160F"
-                  >
-                    {w.icon}
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
+        <MapCanvas center={displayTrack[0] ?? HAYFORK} zoom={15} interactive={false}>
+          <FitBoundsToCoords coords={displayTrack} padding={28} />
+          {headSlice.length >= 2 && <MapGeoLine id="rev-head" coords={headSlice} color="#8E9483" width={3} dashed />}
+          {mainSlice.length >= 2 && <MapGeoLine id="rev-main" coords={mainSlice} color="#E88A3C" width={3.5} onTop />}
+          {tailSlice.length >= 2 && <MapGeoLine id="rev-tail" coords={tailSlice} color="#8E9483" width={3} dashed />}
+          <MapPin coord={displayTrack[0]} background="oklch(0.74 0.14 145)" />
+          <MapPin coord={displayTrack[displayTrack.length - 1]} background="oklch(0.68 0.19 25)" />
+          {capturedWaypoints.map((w) => (
+            <MapWaypoint key={w.id} coord={w.coord} icon={w.icon} color={resolveCssVar(w.color)} />
+          ))}
         </MapCanvas>
       </div>
 
@@ -257,7 +227,7 @@ export function RecordReviewScreen() {
                 marginTop: 2,
               }}
             >
-              WINDOW 5M · REDUCES 142 VTX → 58
+              WINDOW 5M · REDUCES {Math.max(displayTrack.length, 60)} VTX → {Math.max(Math.floor(displayTrack.length * 0.4), 20)}
             </div>
           </div>
           <div
@@ -451,3 +421,4 @@ export function RecordReviewScreen() {
     </div>
   );
 }
+

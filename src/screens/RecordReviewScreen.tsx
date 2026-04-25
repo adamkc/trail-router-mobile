@@ -89,6 +89,8 @@ export function RecordReviewScreen() {
       status,
       tag,
       spark: elev,
+      // Persist the captured GPS path so /map/:id and /editor/:id can show it.
+      geo: displayTrack,
     });
     discard();
     navigate('/library');

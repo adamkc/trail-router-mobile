@@ -252,10 +252,10 @@ export function RouteDetailsScreen() {
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-          <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => navigate('/map')}>
+          <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => navigate(`/map/${route.id}`)}>
             Follow route
           </button>
-          <button type="button" className="btn btn-ghost" onClick={() => navigate('/editor')} aria-label="Edit vertices">
+          <button type="button" className="btn btn-ghost" onClick={() => navigate(`/editor/${route.id}`)} aria-label="Edit vertices">
             <Icon name="edit" size={16} />
           </button>
           <button type="button" className="btn btn-ghost" onClick={() => navigate('/optimizer')} aria-label="Optimize">

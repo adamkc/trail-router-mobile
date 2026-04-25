@@ -5,8 +5,24 @@ import { NavPill } from '../components/NavPill';
 import { Icon, type IconName } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
-import { MapPin, MapJunction, MapLabel, FitBoundsToCoords } from '../components/MapMarkers';
+import { MapPin, MapLabel, FitBoundsToCoords } from '../components/MapMarkers';
 import { svgArrayToGeo, svgToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
+import { useLibrary, type LibraryRoute } from '../store/library';
+
+/** Map a library route's status onto the network's layer-toggle key. */
+const routeStatusToLayerKey = (s: LibraryRoute['status']): 'optimized' | 'built' | 'draft' | 'proposed' => {
+  if (s === 'optimized') return 'optimized';
+  if (s === 'built') return 'built';
+  if (s === 'review') return 'proposed';
+  return 'draft';
+};
+
+const tagToCssColor = (route: LibraryRoute): string => {
+  if (route.status === 'optimized') return resolveCssVar('var(--blaze)');
+  if (route.status === 'built') return resolveCssVar('var(--good)');
+  if (route.status === 'review') return resolveCssVar('var(--topo)');
+  return resolveCssVar('var(--bone)');
+};
 
 interface TrailSegment {
   name: string;
@@ -58,17 +74,9 @@ const NETWORK: TrailSegment[] = [
   },
 ];
 
+// Decorative trailhead + peak markers anchored to the project area.
 const TRAILHEAD_SVG: [number, number] = [40, 500];
 const PEAK_SVG: [number, number] = [380, 60];
-const JUNCTIONS_SVG: Array<[number, number]> = [[340, 150], [150, 410], [220, 350], [255, 320]];
-
-const LABELS_SVG: Array<{ pos: [number, number]; text: string; tone?: 'topo' }> = [
-  { pos: [55, 460],  text: 'HAYFORK LOOP' },
-  { pos: [370, 100], text: 'N. RIDGE' },
-  { pos: [40, 340],  text: 'CUTOFF' },
-  { pos: [285, 240], text: 'MANZ. SW' },
-  { pos: [130, 255], text: 'MEADOW (PROP)', tone: 'topo' },
-];
 
 type LayerKey = 'optimized' | 'built' | 'draft' | 'proposed';
 
@@ -99,23 +107,35 @@ export function NetworkMapScreen() {
   const toggleLayer = (k: LayerKey) => setLayersOn((s) => ({ ...s, [k]: !s[k] }));
   const toggleSnap = (k: SnapKey) => setSnaps((s) => ({ ...s, [k]: !s[k] }));
 
-  // Project all SVG-coord trail data into lng/lat so it sits on the real map.
-  const geoNetwork = useMemo(
-    () => NETWORK.map((t) => ({ ...t, geo: svgArrayToGeo(t.pts), color: resolveCssVar(t.color) })),
-    [],
+  const libraryRoutes = useLibrary((s) => s.routes);
+
+  // Library routes (saved + recorded) shown on the network map. The seed
+  // network demo trails are dropped — library is the source of truth now.
+  const visibleLibraryRoutes = useMemo(
+    () =>
+      libraryRoutes
+        .filter((r) => r.geo.length >= 2)
+        .filter((r) => layersOn[routeStatusToLayerKey(r.status)])
+        .map((r) => ({ ...r, lineColor: tagToCssColor(r) })),
+    [libraryRoutes, layersOn],
+  );
+  const allLibraryCoords = useMemo(
+    () => visibleLibraryRoutes.flatMap((t) => t.geo),
+    [visibleLibraryRoutes],
   );
 
-  // Filter to only the trails whose status is currently toggled on.
-  const visibleNetwork = geoNetwork.filter((t) => layersOn[t.status]);
   const geoTrailhead = useMemo(() => svgToGeo(TRAILHEAD_SVG), []);
   const geoPeak = useMemo(() => svgToGeo(PEAK_SVG), []);
-  const geoJunctions = useMemo(() => svgArrayToGeo(JUNCTIONS_SVG), []);
-  const geoLabels = useMemo(
-    () => LABELS_SVG.map((l) => ({ ...l, coord: svgToGeo(l.pos) })),
-    [],
-  );
+  // Recompute legend counts from the library so the panel stays in sync.
+  const liveLegend = useMemo(() => {
+    const counts = { optimized: 0, built: 0, draft: 0, proposed: 0 };
+    for (const r of libraryRoutes) counts[routeStatusToLayerKey(r.status)] += 1;
+    return LEGEND_LAYERS.map((l) => ({ ...l, n: counts[l.key] }));
+  }, [libraryRoutes]);
 
-  const allCoords = useMemo(() => geoNetwork.flatMap((t) => t.geo), [geoNetwork]);
+  const fitCoords = allLibraryCoords.length >= 2
+    ? allLibraryCoords
+    : svgArrayToGeo(NETWORK[0].pts); // fallback so the map still has bounds
 
   return (
     <div className="screen">
@@ -123,31 +143,33 @@ export function NetworkMapScreen() {
 
       <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
         <MapCanvas center={HAYFORK} zoom={14}>
-          <FitBoundsToCoords coords={allCoords} padding={48} />
-          {visibleNetwork.map((t) => (
+          <FitBoundsToCoords coords={fitCoords} padding={48} />
+          {visibleLibraryRoutes.map((r) => (
             <MapGeoLine
-              key={t.name}
-              id={`net-${t.name.replace(/\s+/g, '-').toLowerCase()}`}
-              coords={t.geo}
-              color={t.color}
-              width={t.solid ? 3 : 2.5}
-              dashed={!t.solid}
-              onTop={t.status === 'optimized'}
+              key={r.id}
+              id={`net-${r.id}`}
+              coords={r.geo}
+              color={r.lineColor}
+              width={r.status === 'optimized' ? 3 : 2.5}
+              dashed={r.status === 'draft' || r.status === 'review'}
+              onTop={r.status === 'optimized'}
             />
           ))}
+          {/* Tag each route with a small mono label at its midpoint */}
+          {visibleLibraryRoutes.map((r) => {
+            const mid = r.geo[Math.floor(r.geo.length / 2)];
+            return (
+              <MapLabel
+                key={`label-${r.id}`}
+                coord={mid}
+                text={r.name.toUpperCase()}
+                color={r.lineColor}
+                offset={[0, -10]}
+              />
+            );
+          })}
           <MapPin coord={geoTrailhead} background={resolveCssVar('var(--good)')}   size={14} />
           <MapPin coord={geoPeak}      background={resolveCssVar('var(--danger)')} size={14} />
-          {geoJunctions.map((coord, i) => (
-            <MapJunction key={i} coord={coord} size={11} />
-          ))}
-          {geoLabels.map((l) => (
-            <MapLabel
-              key={l.text}
-              coord={l.coord}
-              text={l.text}
-              color={l.tone === 'topo' ? resolveCssVar('var(--topo)') : '#BCB8AC'}
-            />
-          ))}
         </MapCanvas>
 
         {/* Top project switcher */}
@@ -238,7 +260,7 @@ export function NetworkMapScreen() {
           }}
         >
           <div className="eyebrow" style={{ marginBottom: 6 }}>LAYERS</div>
-          {LEGEND_LAYERS.map((l) => {
+          {liveLegend.map((l) => {
             const on = layersOn[l.key];
             return (
               <button

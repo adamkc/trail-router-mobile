@@ -3,6 +3,8 @@ import { DesignCanvas } from './components/DesignCanvas';
 import { AndroidDevice } from './components/AndroidDevice';
 import { SCREENS } from './screens/registry';
 import { RouteDetailsScreen } from './screens/RouteDetailsScreen';
+import { MapViewerScreen } from './screens/MapViewerScreen';
+import { VertexEditorScreen } from './screens/VertexEditorScreen';
 import { useIsMobile } from './hooks/useIsMobile';
 
 function ScreenFrame({ entry }: { entry: (typeof SCREENS)[number] }) {
@@ -119,20 +121,38 @@ export default function App() {
         {SCREENS.map((entry) => (
           <Route key={entry.id} path={entry.path} element={<ScreenFrame entry={entry} />} />
         ))}
-        {/* /details/:id reuses the Route Details screen but with the URL-param flavor.
-            Wrapped in the same ScreenFrame so it inherits the bezel + chrome. */}
+        {/* ID-routed flavors of the per-trail screens (details / map / editor).
+            All reuse the same components from the registry but the URL param
+            tells the screen which route to load from the library store. */}
         <Route
           path="/details/:id"
           element={
             <ScreenFrame
               entry={{
-                id: 'details',
-                label: '03 · Route details',
-                section: 'core',
-                path: '/details',
-                width: 392,
-                height: 820,
-                Component: RouteDetailsScreen,
+                id: 'details', label: '03 · Route details', section: 'core',
+                path: '/details', width: 392, height: 820, Component: RouteDetailsScreen,
+              }}
+            />
+          }
+        />
+        <Route
+          path="/map/:id"
+          element={
+            <ScreenFrame
+              entry={{
+                id: 'map', label: '02 · Map viewer', section: 'core',
+                path: '/map', width: 392, height: 820, Component: MapViewerScreen,
+              }}
+            />
+          }
+        />
+        <Route
+          path="/editor/:id"
+          element={
+            <ScreenFrame
+              entry={{
+                id: 'editor', label: '05 · Vertex editor', section: 'core',
+                path: '/editor', width: 392, height: 820, Component: VertexEditorScreen,
               }}
             />
           }

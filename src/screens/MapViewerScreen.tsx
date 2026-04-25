@@ -1,20 +1,15 @@
 import { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon, type IconName } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
-import { MapPin, MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers';
+import { MapPin, FitBoundsToCoords } from '../components/MapMarkers';
 import { ElevChart } from '../components/ElevChart';
-import { svgArrayToGeo, svgToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
-
-const TRAIL_SVG: Array<[number, number]> = [
-  [40, 480], [70, 440], [110, 410], [150, 420], [180, 380],
-  [220, 340], [260, 300], [290, 250], [330, 210], [360, 170],
-];
-
-const VISTA_WAYPOINT_SVG: [number, number] = [220, 340];
+import { resolveCssVar, HAYFORK } from '../utils/geo';
+import { useLibrary } from '../store/library';
+import type { ChipTone } from '../components/Chip';
 
 const CONTROLS: Array<{ icon: IconName; label: string }> = [
   { icon: 'layers',   label: 'HILL' },
@@ -23,12 +18,33 @@ const CONTROLS: Array<{ icon: IconName; label: string }> = [
   { icon: 'target',   label: 'LOC'  },
 ];
 
+const tagToCssColor = (tag: ChipTone | null): string =>
+  tag === 'blaze' ? resolveCssVar('var(--blaze)')
+  : tag === 'good' ? resolveCssVar('var(--good)')
+  : tag === 'warn' ? resolveCssVar('var(--warn)')
+  : tag === 'topo' ? resolveCssVar('var(--topo)')
+  : resolveCssVar('var(--bone)');
+
+const tagToChipClass = (tag: ChipTone | null): string => `chip ${tag ?? ''}`;
+
 export function MapViewerScreen() {
   const navigate = useNavigate();
-  const trailGeo = useMemo(() => svgArrayToGeo(TRAIL_SVG), []);
-  const vistaGeo = useMemo(() => svgToGeo(VISTA_WAYPOINT_SVG), []);
+  const { id } = useParams<{ id?: string }>();
+  const routes = useLibrary((s) => s.routes);
+
+  const route = useMemo(
+    () => (id ? routes.find((r) => r.id === id) : null) ?? routes[0],
+    [id, routes],
+  );
+
+  if (!route) {
+    return <div className="screen"><StatusBar /><NavPill /></div>;
+  }
+
+  const trailGeo = route.geo;
   const start = trailGeo[0];
   const end = trailGeo[trailGeo.length - 1];
+  const accent = tagToCssColor(route.tag);
 
   return (
     <div className="screen">
@@ -37,10 +53,9 @@ export function MapViewerScreen() {
       <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
         <MapCanvas center={HAYFORK} zoom={14}>
           <FitBoundsToCoords coords={trailGeo} padding={48} />
-          <MapGeoLine id="map-trail" coords={trailGeo} color={resolveCssVar('var(--blaze)')} width={4} onTop />
+          <MapGeoLine id={`map-${route.id}`} coords={trailGeo} color={accent} width={4} onTop />
           <MapPin coord={start} background={resolveCssVar('var(--good)')}   size={16} />
           <MapPin coord={end}   background={resolveCssVar('var(--danger)')} size={16} />
-          <MapWaypoint coord={vistaGeo} icon="V" color={resolveCssVar('var(--topo)')} size={20} />
         </MapCanvas>
 
         {/* Floating top bar — back + trail name + coords */}
@@ -69,11 +84,11 @@ export function MapViewerScreen() {
             </button>
             <button
               type="button"
-              onClick={() => navigate('/details')}
+              onClick={() => navigate(`/details/${route.id}`)}
               style={{ flex: 1, textAlign: 'left', color: 'var(--bone)' }}
             >
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 500 }}>
-                Hayfork Loop
+                {route.name}
               </div>
               <div
                 style={{
@@ -83,7 +98,7 @@ export function MapViewerScreen() {
                   letterSpacing: '0.08em',
                 }}
               >
-                40.7289° N · 122.5208° W
+                {start[1].toFixed(4)}° N · {Math.abs(start[0]).toFixed(4)}° W
               </div>
             </button>
             <Icon name="share" size={18} color="var(--moss)" />
@@ -151,7 +166,7 @@ export function MapViewerScreen() {
             <div style={{ width: 40, height: 2, background: 'var(--bone)' }} />
             <span>500 m</span>
           </div>
-          <div style={{ marginTop: 4, color: 'var(--moss)' }}>ZOOM 14.2 · CONTOURS 10M</div>
+          <div style={{ marginTop: 4, color: 'var(--moss)' }}>ZOOM 14 · {trailGeo.length} VTX</div>
         </div>
       </div>
 
@@ -181,7 +196,7 @@ export function MapViewerScreen() {
           }}
         >
           <div>
-            <div className="stat-label">HAYFORK LOOP</div>
+            <div className="stat-label">{route.name.toUpperCase()}</div>
             <div
               style={{
                 fontFamily: 'var(--font-display)',
@@ -190,24 +205,24 @@ export function MapViewerScreen() {
                 letterSpacing: '-0.01em',
               }}
             >
-              14.2{' '}
+              {route.km}{' '}
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--moss)' }}>
-                km · 3h 40m
+                km · {route.gain} m gain
               </span>
             </div>
           </div>
-          <div className="chip blaze">OPTIMIZED</div>
+          <div className={tagToChipClass(route.tag)}>{route.status.toUpperCase()}</div>
         </div>
 
         <div style={{ marginTop: 12, height: 44 }}>
-          <ElevChart data={[420, 430, 480, 520, 580, 610, 640, 620, 560, 500, 440, 420]} height={44} mark={6} />
+          <ElevChart data={route.spark} height={44} mark={Math.floor(route.spark.length / 2)} color={accent} />
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => navigate('/details')}>
+          <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => navigate(`/details/${route.id}`)}>
             <Icon name="route" size={16} /> Follow
           </button>
-          <button type="button" className="btn btn-ghost" onClick={() => navigate('/editor')} aria-label="Edit vertices">
+          <button type="button" className="btn btn-ghost" onClick={() => navigate(`/editor/${route.id}`)} aria-label="Edit vertices">
             <Icon name="edit" size={16} />
           </button>
           <button type="button" className="btn btn-ghost" aria-label="Share">

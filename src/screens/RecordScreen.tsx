@@ -10,6 +10,7 @@ import { CompassBadge } from '../components/CompassBadge';
 import { ElevChart } from '../components/ElevChart';
 import { useRecording, haversineKm, WAYPOINT_TYPES, type GpsState, type WaypointKind } from '../store/recording';
 import { useLibrary } from '../store/library';
+import { newPhotoId, pickCameraPhoto, savePhoto } from '../utils/photoStore';
 
 const HAYFORK: [number, number] = [-122.5208, 40.7289];
 
@@ -457,9 +458,25 @@ export function RecordScreen() {
       {/* Waypoint type picker modal */}
       {pickerOpen && (
         <WaypointPicker
-          onPick={(kind) => {
-            addWaypointOfType(kind);
+          onPick={async (kind) => {
             setPickerOpen(false);
+            if (kind === 'PHOTO') {
+              // Open the camera (or photo picker on desktop). On capture we
+              // save the blob to IndexedDB and attach the id; on cancel we
+              // still drop a generic photo waypoint at the current position.
+              try {
+                const blob = await pickCameraPhoto();
+                if (blob) {
+                  const photoId = newPhotoId();
+                  await savePhoto(photoId, blob);
+                  addWaypointOfType('PHOTO', undefined, photoId);
+                  return;
+                }
+              } catch {
+                // fall through to plain waypoint
+              }
+            }
+            addWaypointOfType(kind);
           }}
           onCancel={() => setPickerOpen(false)}
         />

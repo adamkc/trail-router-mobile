@@ -16,6 +16,8 @@ export interface CapturedWaypoint {
   t: string;
   /** [lng, lat] of the point where the waypoint was captured. */
   coord: [number, number];
+  /** IndexedDB id of an attached photo, when the user captured one. */
+  photoId?: string;
 }
 
 export const WAYPOINT_TYPES: Array<{ kind: WaypointKind; icon: CapturedWaypoint['icon']; color: string; label: string }> = [
@@ -51,8 +53,9 @@ interface RecordingState {
   pushFix: (lng: number, lat: number, elev: number | null, accuracy?: number) => void;
   /** Bump the elapsed counter by one second. Called by the screen's 1Hz interval. */
   bumpElapsed: () => void;
-  /** Capture a waypoint of a given type at the current GPS position. */
-  addWaypointOfType: (kind: WaypointKind, label?: string) => void;
+  /** Capture a waypoint of a given type at the current GPS position.
+   *  `photoId` (optional) attaches a previously-saved photo from photoStore. */
+  addWaypointOfType: (kind: WaypointKind, label?: string, photoId?: string) => void;
   addWaypoint: () => void;
   stop: () => void;
   discard: () => void;
@@ -153,7 +156,7 @@ export const useRecording = create<RecordingState>((set) => ({
   bumpElapsed: () =>
     set((s) => (s.status === 'recording' ? { elapsed: s.elapsed + 1 } : s)),
 
-  addWaypointOfType: (kind, label) =>
+  addWaypointOfType: (kind, label, photoId) =>
     set((s) => {
       const template = WAYPOINT_TYPES.find((t) => t.kind === kind) ?? WAYPOINT_TYPES[0];
       const at: [number, number] = s.geoTrack[s.geoTrack.length - 1] ?? HAYFORK;
@@ -165,6 +168,7 @@ export const useRecording = create<RecordingState>((set) => ({
         label: label?.trim() || template.label,
         t: formatT(s.elapsed),
         coord: at,
+        photoId,
       };
       return { capturedWaypoints: [...s.capturedWaypoints, next] };
     }),

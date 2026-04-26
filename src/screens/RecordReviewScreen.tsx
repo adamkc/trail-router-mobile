@@ -125,6 +125,7 @@ export function RecordReviewScreen() {
         label: w.label,
         t: w.t,
         coord: w.coord,
+        photoId: w.photoId,
       })),
     });
     discard();

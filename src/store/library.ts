@@ -18,6 +18,9 @@ export interface RouteWaypoint {
   /** Stamp from when the waypoint was captured: "0:14" relative or "APR 25". */
   t: string;
   coord: [number, number];
+  /** IndexedDB id of an attached photo (PHOTO waypoints captured via the
+   *  device camera). Lives in the `photos` IDB store, not in localStorage. */
+  photoId?: string;
 }
 
 export interface LibraryRoute {
@@ -153,6 +156,17 @@ export const useLibrary = create<LibraryState>()(
         }));
       },
       removeRoute: (id) => {
+        // Best-effort cleanup of any IDB photo blobs attached to the
+        // route's waypoints — fire-and-forget; failures don't block the
+        // route deletion.
+        const route = (useLibrary.getState().routes ?? []).find((r) => r.id === id);
+        if (route) {
+          for (const w of route.waypoints) {
+            if (w.photoId) {
+              import('../utils/photoStore').then(({ deletePhoto }) => deletePhoto(w.photoId!)).catch(() => {});
+            }
+          }
+        }
         set((s) => ({ routes: s.routes.filter((r) => r.id !== id) }));
       },
       replaceLibrary: (routes) => {

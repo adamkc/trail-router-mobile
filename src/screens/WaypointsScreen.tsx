@@ -6,6 +6,7 @@ import { Icon } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
 import { MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers';
+import { WaypointPhoto } from '../components/WaypointPhoto';
 import { resolveCssVar, HAYFORK } from '../utils/geo';
 import { useLibrary } from '../store/library';
 import { haversineKm } from '../store/recording';
@@ -217,6 +218,7 @@ export function WaypointsScreen() {
                 {w.type} · CAPTURED {w.t}
               </div>
             </div>
+            {w.photoId && <WaypointPhoto photoId={w.photoId} size={44} />}
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--bone-dim)' }}>
               {w.distKm.toFixed(1)} km
             </div>

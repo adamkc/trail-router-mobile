@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Icon, type IconName } from '../components/Icon';
 import { ElevChart } from '../components/ElevChart';
 import { useLibrary, type LibraryRoute } from '../store/library';
+import { useActiveProject } from '../store/projects';
 import { routeChartData } from '../utils/elevation';
 
 interface TabletTrail {
@@ -65,7 +66,12 @@ function statsForRoute(r: LibraryRoute): Array<[string, string, string | null]> 
 
 export function TabletNetworkScreen() {
   const navigate = useNavigate();
-  const routes = useLibrary((s) => s.routes);
+  const allRoutes = useLibrary((s) => s.routes);
+  const activeProject = useActiveProject();
+  const routes = useMemo(
+    () => allRoutes.filter((r) => r.projectId === activeProject.id),
+    [allRoutes, activeProject.id],
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = useMemo(
     () => (selectedId ? routes.find((r) => r.id === selectedId) : null) ?? routes[0],
@@ -208,7 +214,7 @@ export function TabletNetworkScreen() {
                 letterSpacing: '-0.01em',
               }}
             >
-              Hayfork
+              {activeProject.name}
             </div>
           </div>
           <div

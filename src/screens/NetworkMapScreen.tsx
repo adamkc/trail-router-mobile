@@ -17,6 +17,7 @@ import {
 } from '../components/MapMarkers';
 import { svgArrayToGeo, svgToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
 import { useLibrary, type LibraryRoute } from '../store/library';
+import { useActiveProject } from '../store/projects';
 import { useRecording, haversineKm } from '../store/recording';
 import { buildNetwork, findPath, nearestNode, snapToNearestSegment } from '../utils/network';
 import { elevationGain } from '../utils/elevation';
@@ -130,7 +131,12 @@ export function NetworkMapScreen() {
   }>({ startNodeId: null, endNodeId: null });
   const [planError, setPlanError] = useState<string | null>(null);
 
-  const libraryRoutes = useLibrary((s) => s.routes);
+  const allRoutes = useLibrary((s) => s.routes);
+  const activeProject = useActiveProject();
+  const libraryRoutes = useMemo(
+    () => allRoutes.filter((r) => r.projectId === activeProject.id),
+    [allRoutes, activeProject.id],
+  );
 
   // Build the routable graph once per library snapshot. Cheap (~10 ms for
   // ~2.5k vertices) but still worth memoizing — the path-finder calls
@@ -310,7 +316,7 @@ export function NetworkMapScreen() {
       <StatusBar />
 
       <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
-        <MapCanvas center={HAYFORK} zoom={14}>
+        <MapCanvas center={activeProject.center} zoom={14} hillshade={activeProject.hasHillshade}>
           <FitBoundsToCoords coords={fitCoords} padding={48} />
           {visibleLibraryRoutes.map((r) => {
             const useGrade = gradeOverlay && r.elevations.length === r.geo.length && r.elevations.length >= 2;
@@ -430,7 +436,7 @@ export function NetworkMapScreen() {
             <div style={{ flex: 1 }}>
               <div className="eyebrow" style={{ color: 'var(--blaze)' }}>◉ PROJECT</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 500 }}>Hayfork</div>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 500 }}>{activeProject.name}</div>
                 <Icon name="chevron-right" size={14} color="var(--moss)" />
                 <div
                   style={{

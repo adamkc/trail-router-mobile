@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ChipTone } from '../components/Chip';
 import { HAYFORK } from '../utils/geo';
+import { useProjects } from './projects';
 
 export type RouteStatus = 'optimized' | 'draft' | 'built' | 'review';
 
@@ -42,6 +43,11 @@ export interface LibraryRoute {
   elevations: number[];
   /** Waypoints captured during recording or added later. */
   waypoints: RouteWaypoint[];
+  /** Project this route belongs to (foreign key into useProjects). Defaults
+   *  to 'hayfork' for the bundled data and any pre-multi-project entries
+   *  via the v4→v5 migration. New routes recorded/imported under a
+   *  different active project get that project's id. */
+  projectId: string;
 }
 
 /** Synthetic waypoints sprinkled along a seed route — gives the demo something
@@ -77,9 +83,13 @@ function syntheticWaypoints(route: { id: string; geo: Array<[number, number]> })
   return out;
 }
 
+/** Input shape for addRoute — `id` is generated, `projectId` defaults to the
+ *  active project from the projects store when not supplied. */
+export type LibraryRouteInput = Omit<LibraryRoute, 'id' | 'projectId'> & { projectId?: string };
+
 interface LibraryState {
   routes: LibraryRoute[];
-  addRoute: (input: Omit<LibraryRoute, 'id'>) => LibraryRoute;
+  addRoute: (input: LibraryRouteInput) => LibraryRoute;
   /** Replace a route's geographic path (called by the editor on Save). */
   updateRouteGeo: (id: string, geo: Array<[number, number]>) => void;
   /** Rename a route in place (called from /details). */
@@ -130,7 +140,7 @@ const SEED: LibraryRoute[] = SEED_BASE.map((r) => {
   // Seed routes have no real elevations — the synthesized `spark` is used
   // for chart display until the user records a real route or imports the
   // Hayfork project (which fetches Open-Meteo elevations on import).
-  return { ...r, geo, elevations: [], waypoints: syntheticWaypoints({ id: r.id, geo }) };
+  return { ...r, geo, elevations: [], waypoints: syntheticWaypoints({ id: r.id, geo }), projectId: 'hayfork' };
 });
 
 export const useLibrary = create<LibraryState>()(
@@ -139,7 +149,10 @@ export const useLibrary = create<LibraryState>()(
       routes: SEED,
       addRoute: (input) => {
         const id = `${input.name.toLowerCase().replace(/\s+/g, '-')}-${Date.now().toString(36)}`;
-        const route: LibraryRoute = { ...input, id };
+        // If the caller didn't specify a projectId, pin the route to the
+        // currently-active project so recordings and imports stay scoped.
+        const projectId = input.projectId || useProjects.getState().activeProjectId;
+        const route: LibraryRoute = { ...input, id, projectId };
         set((s) => ({ routes: [route, ...s.routes] }));
         return route;
       },
@@ -176,9 +189,9 @@ export const useLibrary = create<LibraryState>()(
     {
       name: 'trail-router-library',
       // v1 → v2: added `geo`. v2 → v3: added `waypoints`. v3 → v4: added
-      // `elevations` (per-vertex meters; empty for legacy entries — they
-      // continue using the lower-res `spark` until re-imported/re-recorded).
-      version: 4,
+      // `elevations`. v4 → v5: added `projectId` (multi-project support;
+      // legacy entries belong to the bundled 'hayfork' project).
+      version: 5,
       partialize: (state) => ({ routes: state.routes }),
       migrate: (persisted, fromVersion) => {
         const state = persisted as { routes?: LibraryRoute[] } | undefined;
@@ -196,6 +209,11 @@ export const useLibrary = create<LibraryState>()(
         if (fromVersion < 4) {
           state.routes = state.routes.map((r) =>
             Array.isArray(r.elevations) ? r : { ...r, elevations: [] },
+          );
+        }
+        if (fromVersion < 5) {
+          state.routes = state.routes.map((r) =>
+            r.projectId ? r : { ...r, projectId: 'hayfork' },
           );
         }
         return state;

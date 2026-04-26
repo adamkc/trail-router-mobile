@@ -7,6 +7,7 @@ import { ElevChart } from '../components/ElevChart';
 import { BottomTabBar } from '../components/BottomTabBar';
 import type { ChipTone } from '../components/Chip';
 import { useLibrary, type RouteStatus } from '../store/library';
+import { useActiveProject } from '../store/projects';
 
 type Segment = 'ALL' | 'BUILT' | 'DRAFT' | 'OPTIMIZED';
 const SEGMENTS: readonly Segment[] = ['ALL', 'BUILT', 'DRAFT', 'OPTIMIZED'] as const;
@@ -42,11 +43,15 @@ const sumGain = (routes: Array<{ gain: string }>): string => {
 export function LibraryScreen() {
   const navigate = useNavigate();
   const allRoutes = useLibrary((s) => s.routes);
+  const activeProject = useActiveProject();
   const [segment, setSegment] = useState<Segment>('ALL');
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const q = search.trim().toLowerCase();
-  const ROUTES = allRoutes
+  // Scope library to the active project so switching projects swaps the
+  // visible list cleanly without touching persisted data.
+  const projectRoutes = allRoutes.filter((r) => r.projectId === activeProject.id);
+  const ROUTES = projectRoutes
     .filter((r) => SEGMENT_PREDICATE[segment](r.status))
     .filter((r) => !q || r.name.toLowerCase().includes(q));
   return (
@@ -57,7 +62,7 @@ export function LibraryScreen() {
       <div style={{ padding: '12px 20px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div className="stat-label">PROJECT · HAYFORK</div>
+            <div className="stat-label">PROJECT · {activeProject.name.toUpperCase()}</div>
             <div
               style={{
                 fontFamily: 'var(--font-display)',

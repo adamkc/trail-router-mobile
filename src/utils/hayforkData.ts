@@ -197,6 +197,7 @@ export async function loadHayforkProject(): Promise<LibraryRoute[]> {
       elevations: [],
       // No waypoints in the editor's trails GeoJSON — leave empty.
       waypoints: [],
+      projectId: 'hayfork',
     });
   });
   return routes;

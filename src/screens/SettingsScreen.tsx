@@ -7,6 +7,7 @@ import { BottomTabBar } from '../components/BottomTabBar';
 import { useLibrary } from '../store/library';
 import { useRecording } from '../store/recording';
 import { usePreferences } from '../store/preferences';
+import { useActiveProject, useProjects } from '../store/projects';
 import {
   downloadString,
   parseGeoJsonRoutes,
@@ -22,6 +23,9 @@ export function SettingsScreen() {
   const routes = useLibrary((s) => s.routes);
   const addRoute = useLibrary((s) => s.addRoute);
   const replaceLibrary = useLibrary((s) => s.replaceLibrary);
+  const activeProject = useActiveProject();
+  const projects = useProjects((s) => s.projects);
+  const projectRoutes = routes.filter((r) => r.projectId === activeProject.id);
   const status = useRecording((s) => s.status);
   const hillshadeOn = usePreferences((s) => s.hillshadeOn);
   const setHillshade = usePreferences((s) => s.setHillshade);
@@ -201,9 +205,15 @@ export function SettingsScreen() {
         {/* Section: Account */}
         <SectionLabel>PROJECT</SectionLabel>
         <Card>
-          <NavRow label="Hayfork" sub={`Trinity County · ${routes.length} routes`} onClick={() => navigate('/projects')} />
+          <NavRow
+            label={activeProject.name}
+            sub={`${activeProject.subtitle} · ${projectRoutes.length} route${projectRoutes.length === 1 ? '' : 's'}`}
+            onClick={() => navigate('/projects')}
+          />
           <Divider />
-          <NavRow label="Saved routes" sub={`${routes.length} in library`} onClick={() => navigate('/library')} />
+          <NavRow label="All projects" sub={`${projects.length} in library`} onClick={() => navigate('/projects')} />
+          <Divider />
+          <NavRow label="Saved routes" sub={`${routes.length} across all projects`} onClick={() => navigate('/library')} />
           <Divider />
           <NavRow
             label="Reload Hayfork data"

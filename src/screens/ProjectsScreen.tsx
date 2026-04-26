@@ -6,64 +6,49 @@ import { Icon } from '../components/Icon';
 import { BottomTabBar } from '../components/BottomTabBar';
 import type { ChipTone } from '../components/Chip';
 import { useLibrary } from '../store/library';
+import { projectExtentsFromRoutes, useProjects } from '../store/projects';
+import { parseGeoJsonRoutes, pickJsonFile } from '../utils/geojson';
+import { parseGpxRoutes } from '../utils/gpx';
 
-interface Project {
+interface ProjectCardData {
+  id: string;
   name: string;
   subtitle: string;
   trails: number;
   km: string;
   gain: string;
-  status: string;
+  status: 'active' | 'archived';
   tag: ChipTone;
   built: number;
   draft: number;
   optimized: number;
   updated: string;
+  isActive: boolean;
 }
-
-const PROJECTS: Project[] = [
-  {
-    name: 'Hayfork',
-    subtitle: 'Trinity County · Public works',
-    trails: 12, km: '42.8', gain: '+2,140',
-    status: 'active', tag: 'blaze',
-    built: 7, draft: 3, optimized: 2,
-    updated: 'Today',
-  },
-  {
-    name: 'Hidden Lakes Loop',
-    subtitle: 'USFS Shasta-Trinity',
-    trails: 8, km: '31.4', gain: '+1,620',
-    status: 'planning', tag: 'topo',
-    built: 2, draft: 5, optimized: 1,
-    updated: '2d ago',
-  },
-  {
-    name: 'Sierra Buttes',
-    subtitle: 'Sierra County · SBT collab',
-    trails: 18, km: '74.2', gain: '+4,380',
-    status: 'built', tag: 'good',
-    built: 16, draft: 0, optimized: 2,
-    updated: 'Apr 18',
-  },
-  {
-    name: 'Etna Ridge',
-    subtitle: 'Salmon-Scott River RD',
-    trails: 5, km: '14.9', gain: '+890',
-    status: 'survey', tag: 'warn',
-    built: 0, draft: 5, optimized: 0,
-    updated: 'Apr 12',
-  },
-];
 
 type Segment = 'ALL' | 'ACTIVE' | 'ARCHIVED';
 const SEGMENTS: readonly Segment[] = ['ALL', 'ACTIVE', 'ARCHIVED'] as const;
 
 const SEGMENT_PREDICATE: Record<Segment, (status: string) => boolean> = {
   ALL:      () => true,
-  ACTIVE:   (s) => s === 'active' || s === 'planning' || s === 'survey',
+  ACTIVE:   (s) => s === 'active',
   ARCHIVED: (s) => s === 'archived',
 };
+
+function formatRelative(epoch: number): string {
+  if (epoch === 0) return 'Bundled';
+  const ageMs = Date.now() - epoch;
+  const day = 1000 * 60 * 60 * 24;
+  if (ageMs < day) return 'Today';
+  const days = Math.floor(ageMs / day);
+  if (days < 7) return `${days}d ago`;
+  return new Date(epoch).toISOString().slice(0, 10);
+}
+
+function projectIdFromName(name: string): string {
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  return slug || `project-${Date.now().toString(36)}`;
+}
 
 const tagStroke: Record<ChipTone, string> = {
   blaze:   'var(--blaze)',
@@ -79,36 +64,84 @@ export function ProjectsScreen() {
   const [segment, setSegment] = useState<Segment>('ALL');
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
   const routes = useLibrary((s) => s.routes);
+  const addRoute = useLibrary((s) => s.addRoute);
+  const projects = useProjects((s) => s.projects);
+  const activeProjectId = useProjects((s) => s.activeProjectId);
+  const setActive = useProjects((s) => s.setActive);
+  const addProject = useProjects((s) => s.addProject);
 
-  // Hayfork derives its counts + total km/gain from the live library — every
-  // route the user records or saves shows up here without a manual update.
-  const hayforkCounts = useMemo(() => {
-    const counts = { built: 0, draft: 0, optimized: 0, total: routes.length };
-    let kmSum = 0, gainSum = 0;
-    for (const r of routes) {
-      if (r.status === 'built') counts.built += 1;
-      else if (r.status === 'draft') counts.draft += 1;
-      else if (r.status === 'optimized') counts.optimized += 1;
-      kmSum += parseFloat(r.km) || 0;
-      gainSum += parseInt(r.gain.replace(/[^\d-]/g, ''), 10) || 0;
+  const projectsLive: ProjectCardData[] = useMemo(() => {
+    return projects.map((p) => {
+      const inProject = routes.filter((r) => r.projectId === p.id);
+      let built = 0, draft = 0, optimized = 0;
+      let kmSum = 0, gainSum = 0;
+      for (const r of inProject) {
+        if (r.status === 'built') built += 1;
+        else if (r.status === 'draft') draft += 1;
+        else if (r.status === 'optimized') optimized += 1;
+        kmSum += parseFloat(r.km) || 0;
+        gainSum += parseInt(r.gain.replace(/[^\d-]/g, ''), 10) || 0;
+      }
+      const isActive = p.id === activeProjectId;
+      return {
+        id: p.id,
+        name: p.name,
+        subtitle: p.subtitle,
+        trails: inProject.length,
+        km: kmSum.toFixed(1),
+        gain: `+${gainSum.toLocaleString()}`,
+        status: 'active' as const,
+        tag: isActive ? 'blaze' : built >= optimized + draft ? 'good' : 'topo',
+        built, draft, optimized,
+        updated: formatRelative(p.createdAt),
+        isActive,
+      };
+    });
+  }, [projects, routes, activeProjectId]);
+
+  const handleImportNewProject = async () => {
+    setImportStatus(null);
+    try {
+      const file = await pickJsonFile('.geojson,.json,.gpx,application/geo+json,application/json,application/gpx+xml');
+      if (!file) return;
+      const isGpx = /\.gpx$/i.test(file.name) || /^<\?xml/.test(file.text);
+      const parsed = isGpx ? parseGpxRoutes(file.text) : parseGeoJsonRoutes(file.text);
+      if (parsed.length === 0) {
+        setImportStatus(`No usable routes found in ${file.name}`);
+        return;
+      }
+      // Derive a project id + extents from the file's content.
+      const baseName = file.name.replace(/\.(geojson|json|gpx)$/i, '');
+      const id = projectIdFromName(baseName);
+      const extents = projectExtentsFromRoutes(parsed.map((r) => r.geo));
+      if (!extents) {
+        setImportStatus(`Couldn't compute project extents from ${file.name}`);
+        return;
+      }
+      addProject({
+        id,
+        name: baseName,
+        subtitle: `Imported · ${parsed.length} route${parsed.length === 1 ? '' : 's'}`,
+        center: extents.center,
+        bounds: extents.bounds,
+        hasHillshade: false,
+        createdAt: Date.now(),
+      });
+      // addProject sets active to the new project; addRoute now defaults
+      // projectId to the active id, so each parsed route attaches correctly.
+      for (const r of parsed) addRoute(r);
+      setImportStatus(`Imported ${parsed.length} route${parsed.length === 1 ? '' : 's'} into "${baseName}"`);
+    } catch (e) {
+      setImportStatus(`Project import failed: ${(e as Error).message}`);
     }
-    return { ...counts, km: kmSum.toFixed(1), gain: `+${gainSum.toLocaleString()}` };
-  }, [routes]);
+  };
 
-  const projectsLive = PROJECTS.map((p) =>
-    p.name === 'Hayfork'
-      ? {
-          ...p,
-          trails: hayforkCounts.total,
-          km: hayforkCounts.km,
-          gain: hayforkCounts.gain,
-          built: hayforkCounts.built,
-          draft: hayforkCounts.draft,
-          optimized: hayforkCounts.optimized,
-        }
-      : p,
-  );
+  const handleSelectProject = (id: string) => {
+    setActive(id);
+    navigate('/network-map');
+  };
 
   const q = search.trim().toLowerCase();
   const visibleProjects = projectsLive
@@ -163,6 +196,7 @@ export function ProjectsScreen() {
             <button
               type="button"
               aria-label="New project"
+              onClick={handleImportNewProject}
               style={{
                 width: 40, height: 40, borderRadius: 12,
                 background: 'var(--surface-2)',
@@ -276,8 +310,30 @@ export function ProjectsScreen() {
           </div>
         ) : (
           visibleProjects.map((p, i) => (
-            <ProjectCard key={p.name} p={p} i={i} onOpen={() => navigate('/network-map')} />
+            <ProjectCard
+              key={p.id}
+              p={p}
+              i={i}
+              onOpen={() => handleSelectProject(p.id)}
+            />
           ))
+        )}
+        {importStatus && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: 'color-mix(in oklch, var(--blaze) 12%, var(--surface-2))',
+              border: '1px solid color-mix(in oklch, var(--blaze) 35%, transparent)',
+              color: 'var(--bone)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              letterSpacing: '0.04em',
+            }}
+          >
+            {importStatus}
+          </div>
         )}
       </div>
 
@@ -287,9 +343,9 @@ export function ProjectsScreen() {
   );
 }
 
-function ProjectCard({ p, i, onOpen }: { p: Project; i: number; onOpen: () => void }) {
+function ProjectCard({ p, i, onOpen }: { p: ProjectCardData; i: number; onOpen: () => void }) {
   const accent = tagStroke[p.tag];
-  const isActive = i === 0;
+  const isActive = p.isActive;
   return (
     <button
       type="button"

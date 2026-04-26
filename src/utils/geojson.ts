@@ -9,7 +9,7 @@
  */
 
 import { haversineKm } from '../store/recording';
-import type { LibraryRoute, RouteStatus } from '../store/library';
+import type { LibraryRoute, LibraryRouteInput, RouteStatus } from '../store/library';
 import type { ChipTone } from '../components/Chip';
 
 type Coord = [number, number];
@@ -21,7 +21,7 @@ interface FeatureLike {
 }
 
 /** Parse a GeoJSON string into a list of route candidates ready for addRoute(). */
-export function parseGeoJsonRoutes(text: string): Array<Omit<LibraryRoute, 'id'>> {
+export function parseGeoJsonRoutes(text: string): LibraryRouteInput[] {
   let json: unknown;
   try {
     json = JSON.parse(text);
@@ -40,7 +40,7 @@ export function parseGeoJsonRoutes(text: string): Array<Omit<LibraryRoute, 'id'>
     return [];
   })();
 
-  const routes: Array<Omit<LibraryRoute, 'id'>> = [];
+  const routes: LibraryRouteInput[] = [];
   for (const f of features) {
     const geom = f.geometry;
     if (!geom) continue;

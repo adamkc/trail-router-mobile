@@ -10,7 +10,7 @@
  */
 
 import { haversineKm } from '../store/recording';
-import type { LibraryRoute, RouteStatus, RouteWaypoint, WaypointKind } from '../store/library';
+import type { LibraryRoute, LibraryRouteInput, RouteStatus, RouteWaypoint, WaypointKind } from '../store/library';
 
 const escape = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -80,7 +80,7 @@ const KIND_TO_COLOR: Record<WaypointKind, string> = {
  * <wpt> entries are bucketed onto whichever track contains the nearest
  * vertex (within 100 m); orphan waypoints are dropped.
  */
-export function parseGpxRoutes(text: string): Array<Omit<LibraryRoute, 'id'>> {
+export function parseGpxRoutes(text: string): LibraryRouteInput[] {
   const parser = new DOMParser();
   const doc = parser.parseFromString(text, 'application/xml');
   if (doc.querySelector('parsererror')) {
@@ -90,7 +90,7 @@ export function parseGpxRoutes(text: string): Array<Omit<LibraryRoute, 'id'>> {
   const tracks = Array.from(doc.getElementsByTagName('trk'));
   const allWaypointEls = Array.from(doc.getElementsByTagName('wpt'));
 
-  const routes: Array<Omit<LibraryRoute, 'id'>> = [];
+  const routes: LibraryRouteInput[] = [];
 
   for (let ti = 0; ti < tracks.length; ti++) {
     const trk = tracks[ti];

@@ -117,7 +117,7 @@ function ScreenFrame({ entry }: { entry: (typeof SCREENS)[number] }) {
         }}
       >
         <Link
-          to="/"
+          to="/canvas"
           style={{
             fontFamily: 'var(--font-mono)',
             fontSize: 11,
@@ -139,6 +139,19 @@ function ScreenFrame({ entry }: { entry: (typeof SCREENS)[number] }) {
         >
           {label}
         </span>
+        <Link
+          to="/"
+          style={{
+            marginLeft: 'auto',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            letterSpacing: '0.08em',
+            color: 'var(--moss)',
+            textTransform: 'uppercase',
+          }}
+        >
+          Home →
+        </Link>
       </div>
       <AndroidDevice width={width} height={height}>
         <Component />
@@ -146,6 +159,9 @@ function ScreenFrame({ entry }: { entry: (typeof SCREENS)[number] }) {
     </div>
   );
 }
+
+/** The home entry — `/` lands users on a real screen, not the design canvas. */
+const HOME_ENTRY = SCREENS.find((s) => s.id === 'home')!;
 
 function NotFound() {
   return (
@@ -173,7 +189,7 @@ function NotFound() {
           textTransform: 'uppercase',
         }}
       >
-        ← Back to canvas
+        ← Back to home
       </Link>
     </div>
   );
@@ -184,7 +200,10 @@ export default function App() {
   return (
     <HashRouter>
       <Routes>
-        <Route path="/" element={<DesignCanvas />} />
+        {/* `/` is the real landing — Home framed on desktop, full-bleed on
+            mobile. `/canvas` is the designer overview of all artboards. */}
+        <Route path="/" element={<ScreenFrame entry={HOME_ENTRY} />} />
+        <Route path="/canvas" element={<DesignCanvas />} />
         {SCREENS.map((entry) => (
           <Route key={entry.id} path={entry.path} element={<ScreenFrame entry={entry} />} />
         ))}

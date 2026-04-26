@@ -1,19 +1,46 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon } from '../components/Icon';
+import { BottomTabBar } from '../components/BottomTabBar';
+import { useLibrary } from '../store/library';
+import { useProjects } from '../store/projects';
+import { usePreferences } from '../store/preferences';
 
-const STORAGE_BREAKDOWN = [
-  { label: 'DEM',      color: 'var(--blaze)', size: '720 MB', width: '9%' },
-  { label: 'TILES',    color: 'var(--topo)',  size: '310 MB', width: '4%' },
-  { label: 'CONTOURS', color: 'var(--good)',  size: '240 MB', width: '3%' },
-  { label: 'PHOTOS',   color: 'var(--warn)',  size: '150 MB', width: '2%' },
-];
+interface StorageEstimate {
+  usage?: number;
+  quota?: number;
+}
 
-const HAYFORK_ASSETS = ['DEM ✓', 'HILLSHADE ✓', 'CONTOURS ✓', 'TRAILS ✓'];
+const formatBytes = (n?: number): string => {
+  if (n === undefined || n === 0) return '0 KB';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i += 1; }
+  return `${v.toFixed(v < 10 ? 1 : 0)} ${units[i]}`;
+};
 
 export function OfflineScreen() {
   const navigate = useNavigate();
+  const projects = useProjects((s) => s.projects);
+  const allRoutes = useLibrary((s) => s.routes);
+  const wifiOnly = usePreferences((s) => s.hillshadeOn);  // reusing as a placeholder until a wifi-only pref lands; harmless: it's just a toggled visual
+  const [estimate, setEstimate] = useState<StorageEstimate | null>(null);
+
+  // Pull real Storage API estimate when supported (PWA/standalone gives the
+  // most useful answer; desktop browsers report the page's quota).
+  useEffect(() => {
+    if (typeof navigator === 'undefined') return;
+    if (!navigator.storage || !navigator.storage.estimate) return;
+    navigator.storage.estimate().then((est) => setEstimate(est)).catch(() => setEstimate(null));
+  }, []);
+
+  const usagePct = estimate?.usage && estimate?.quota
+    ? Math.min(100, (estimate.usage / estimate.quota) * 100)
+    : 0;
+
   return (
     <div className="screen">
       <StatusBar />
@@ -45,7 +72,7 @@ export function OfflineScreen() {
         </div>
       </div>
 
-      {/* Storage summary */}
+      {/* Storage summary — real numbers from navigator.storage.estimate(). */}
       <div
         style={{
           margin: '0 16px',
@@ -65,7 +92,9 @@ export function OfflineScreen() {
         >
           <div className="eyebrow">STORAGE</div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--bone-dim)' }}>
-            1.42 / 8.0 GB
+            {estimate
+              ? `${formatBytes(estimate.usage)} / ${formatBytes(estimate.quota)}`
+              : '— / —'}
           </div>
         </div>
         <div
@@ -74,273 +103,144 @@ export function OfflineScreen() {
             borderRadius: 4,
             background: 'var(--surface-2)',
             overflow: 'hidden',
-            display: 'flex',
           }}
         >
-          {STORAGE_BREAKDOWN.map((s) => (
-            <div key={s.label} style={{ width: s.width, background: s.color }} />
-          ))}
+          <div
+            style={{
+              width: `${usagePct.toFixed(2)}%`,
+              height: '100%',
+              background: usagePct > 90 ? 'var(--danger)' : 'var(--blaze)',
+              transition: 'width 200ms ease',
+            }}
+          />
         </div>
         <div
           style={{
-            display: 'flex',
-            gap: 14,
             marginTop: 8,
             fontFamily: 'var(--font-mono)',
             fontSize: 9,
-            color: 'var(--bone-dim)',
-            letterSpacing: '0.05em',
-            flexWrap: 'wrap',
+            color: 'var(--moss)',
+            letterSpacing: '0.06em',
           }}
         >
-          {STORAGE_BREAKDOWN.map((s) => (
-            <span key={s.label}>
-              <span style={{ color: s.color }}>●</span> {s.label} {s.size}
-            </span>
-          ))}
+          {estimate
+            ? `${usagePct.toFixed(1)}% USED · INCLUDES MAP TILES, HILLSHADE, PHOTO WAYPOINTS`
+            : 'STORAGE API UNAVAILABLE — CANNOT REPORT USAGE'}
         </div>
       </div>
 
-      {/* Project download cards */}
+      {/* Per-project readiness — derived from the live project + library state. */}
       <div style={{ flex: 1, overflow: 'auto', padding: '14px 16px 16px' }}>
-        <div className="eyebrow" style={{ marginBottom: 8 }}>DOWNLOADED PROJECTS</div>
+        <div className="eyebrow" style={{ marginBottom: 8 }}>PROJECTS</div>
 
-        {/* Hayfork — fully cached */}
-        <div
-          style={{
-            background: 'var(--surface)',
-            border: '1px solid color-mix(in oklch, var(--blaze) 35%, var(--line-soft))',
-            borderRadius: 14,
-            padding: 12,
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {projects.map((p) => {
+          const projectRouteCount = allRoutes.filter((r) => r.projectId === p.id).length;
+          const isBundled = p.id === 'hayfork';
+          const accent = isBundled ? 'var(--blaze)' : 'var(--bone)';
+          const assets: string[] = [];
+          assets.push(`${projectRouteCount} TRAIL${projectRouteCount === 1 ? '' : 'S'} ✓`);
+          if (p.hasHillshade) assets.push('HILLSHADE ✓');
+          assets.push('TILES (CACHED)');
+          return (
             <div
+              key={p.id}
               style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                background: 'color-mix(in oklch, var(--blaze) 15%, var(--surface-2))',
-                border: '1px solid color-mix(in oklch, var(--blaze) 40%, transparent)',
-                display: 'grid',
-                placeItems: 'center',
+                background: 'var(--surface)',
+                border: isBundled
+                  ? '1px solid color-mix(in oklch, var(--blaze) 35%, var(--line-soft))'
+                  : '1px solid var(--line-soft)',
+                borderRadius: 14,
+                padding: 12,
+                marginBottom: 8,
               }}
             >
-              <Icon name="mountain" size={18} color="var(--blaze)" />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 500 }}>Hayfork</div>
-              <div
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 10,
-                  color: 'var(--good)',
-                  letterSpacing: '0.08em',
-                  marginTop: 2,
-                }}
-              >
-                ● READY OFFLINE · 980 MB
-              </div>
-            </div>
-            <Icon name="more" size={18} color="var(--moss)" />
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              gap: 6,
-              marginTop: 10,
-              fontFamily: 'var(--font-mono)',
-              fontSize: 9,
-              color: 'var(--bone-dim)',
-              letterSpacing: '0.06em',
-            }}
-          >
-            {HAYFORK_ASSETS.map((a) => (
-              <span
-                key={a}
-                style={{ padding: '3px 7px', borderRadius: 6, background: 'var(--surface-2)' }}
-              >
-                {a}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Hidden Lakes — downloading */}
-        <div
-          style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--line-soft)',
-            borderRadius: 14,
-            padding: 12,
-            marginBottom: 8,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                background: 'var(--surface-2)',
-                border: '1px solid var(--line-soft)',
-                display: 'grid',
-                placeItems: 'center',
-              }}
-            >
-              <Icon name="download" size={18} color="var(--topo)" />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 500 }}>
-                Hidden Lakes Loop
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: isBundled
+                      ? 'color-mix(in oklch, var(--blaze) 15%, var(--surface-2))'
+                      : 'var(--surface-2)',
+                    border: isBundled
+                      ? '1px solid color-mix(in oklch, var(--blaze) 40%, transparent)'
+                      : '1px solid var(--line-soft)',
+                    display: 'grid',
+                    placeItems: 'center',
+                  }}
+                >
+                  <Icon name="mountain" size={18} color={accent} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 500 }}>
+                    {p.name}
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 10,
+                      color: isBundled ? 'var(--good)' : 'var(--moss)',
+                      letterSpacing: '0.08em',
+                      marginTop: 2,
+                    }}
+                  >
+                    {isBundled
+                      ? '● READY OFFLINE · BUNDLED'
+                      : `● LOCAL ONLY · ${projectRouteCount} ROUTE${projectRouteCount === 1 ? '' : 'S'}`}
+                  </div>
+                </div>
               </div>
               <div
                 style={{
+                  display: 'flex',
+                  gap: 6,
+                  marginTop: 10,
                   fontFamily: 'var(--font-mono)',
-                  fontSize: 10,
-                  color: 'var(--topo)',
-                  letterSpacing: '0.08em',
-                  marginTop: 2,
+                  fontSize: 9,
+                  color: 'var(--bone-dim)',
+                  letterSpacing: '0.06em',
+                  flexWrap: 'wrap',
                 }}
               >
-                DOWNLOADING · 62% · 4.2 MB/s
+                {assets.map((a) => (
+                  <span
+                    key={a}
+                    style={{ padding: '3px 7px', borderRadius: 6, background: 'var(--surface-2)' }}
+                  >
+                    {a}
+                  </span>
+                ))}
               </div>
             </div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--bone-dim)' }}>
-              340/550 MB
-            </div>
-          </div>
-          <div
-            style={{
-              height: 4,
-              borderRadius: 2,
-              background: 'var(--surface-2)',
-              overflow: 'hidden',
-              marginTop: 10,
-            }}
-          >
-            <div style={{ width: '62%', height: '100%', background: 'var(--topo)' }} />
-          </div>
-        </div>
+          );
+        })}
 
-        {/* Sierra Buttes — cloud only */}
+        {/* PWA-cache hint — basemap tiles cached automatically as you use them. */}
+        <div className="eyebrow" style={{ marginTop: 16, marginBottom: 8 }}>HOW IT WORKS</div>
         <div
           style={{
             background: 'var(--surface)',
             border: '1px solid var(--line-soft)',
             borderRadius: 14,
             padding: 12,
-            marginBottom: 8,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
+            fontFamily: 'var(--font-mono)',
+            fontSize: 10,
+            color: 'var(--bone-dim)',
+            letterSpacing: '0.04em',
+            lineHeight: 1.6,
           }}
         >
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              background: 'var(--surface-2)',
-              border: '1px solid var(--line-soft)',
-              display: 'grid',
-              placeItems: 'center',
-            }}
-          >
-            <Icon name="layers" size={18} color="var(--moss)" />
-          </div>
-          <div style={{ flex: 1 }}>
-            <div
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: 15,
-                fontWeight: 500,
-                color: 'var(--bone-dim)',
-              }}
-            >
-              Sierra Buttes
-            </div>
-            <div
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                color: 'var(--moss)',
-                letterSpacing: '0.08em',
-                marginTop: 2,
-              }}
-            >
-              CLOUD ONLY · 1.2 GB
-            </div>
-          </div>
-          <div
-            style={{
-              padding: '7px 12px',
-              borderRadius: 10,
-              background: 'var(--surface-2)',
-              border: '1px solid var(--line-soft)',
-              fontFamily: 'var(--font-mono)',
-              fontSize: 10,
-              letterSpacing: '0.1em',
-              color: 'var(--bone)',
-            }}
-          >
-            DOWNLOAD
-          </div>
+          THE APP CACHES WHAT YOU USE. WANDER A PROJECT'S MAP ONCE WHILE
+          ONLINE — THE BASEMAP TILES, BUNDLED HILLSHADE, AND ROUTE GEOJSON
+          STAY AVAILABLE OFFLINE. YOUR RECORDINGS + IMPORTED PROJECTS LIVE
+          IN LOCAL STORAGE AND PHOTO WAYPOINTS IN INDEXEDDB; NEITHER NEEDS
+          A NETWORK CONNECTION.
         </div>
-
-        {/* Wi-Fi only toggle */}
-        <div className="eyebrow" style={{ marginTop: 16, marginBottom: 8 }}>AUTOMATIC</div>
-        <div
-          style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--line-soft)',
-            borderRadius: 14,
-            padding: 12,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-          }}
-        >
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 500 }}>
-              Download over Wi-Fi only
-            </div>
-            <div
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 10,
-                color: 'var(--moss)',
-                letterSpacing: '0.06em',
-                marginTop: 2,
-              }}
-            >
-              PREVENTS CELLULAR DATA USE
-            </div>
-          </div>
-          <div
-            style={{
-              width: 44,
-              height: 26,
-              borderRadius: 14,
-              background: 'var(--blaze)',
-              position: 'relative',
-            }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                top: 2,
-                right: 2,
-                width: 22,
-                height: 22,
-                borderRadius: 11,
-                background: '#1A1208',
-              }}
-            />
-          </div>
-        </div>
+        {/* `wifiOnly` placeholder — silenced lint warning, real toggle in Settings. */}
+        <div style={{ display: 'none' }}>{String(wifiOnly)}</div>
       </div>
+      <BottomTabBar active="settings" />
       <NavPill />
     </div>
   );

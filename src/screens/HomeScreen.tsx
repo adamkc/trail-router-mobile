@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
@@ -6,6 +7,7 @@ import { BottomTabBar } from '../components/BottomTabBar';
 import { useRecording } from '../store/recording';
 import { useLibrary } from '../store/library';
 import { useActiveProject } from '../store/projects';
+import { computeDaylight, fetchCurrentWeather, type WeatherInfo } from '../utils/weather';
 import type { ChipTone } from '../components/Chip';
 
 type RecentTag = ChipTone | null;
@@ -21,6 +23,24 @@ const formatElapsed = (seconds: number): string => {
   const s = seconds % 60;
   return `${m}:${String(s).padStart(2, '0')}`;
 };
+
+/** Pick a time-of-day greeting based on the local hour. */
+function greetingForNow(): string {
+  const h = new Date().getHours();
+  if (h < 5)  return 'Late one,';
+  if (h < 12) return 'Good morning,';
+  if (h < 18) return 'Good afternoon,';
+  if (h < 21) return 'Good evening,';
+  return 'Late one,';
+}
+
+/** Format [lng, lat] as a degree-and-decimal string with N/S/E/W suffixes. */
+function formatCoords(coord: [number, number]): string {
+  const [lng, lat] = coord;
+  const ns = lat >= 0 ? 'N' : 'S';
+  const ew = lng >= 0 ? 'E' : 'W';
+  return `${Math.abs(lat).toFixed(4)}° ${ns} · ${Math.abs(lng).toFixed(4)}° ${ew}`;
+}
 
 export function HomeScreen() {
   const navigate = useNavigate();
@@ -48,6 +68,17 @@ export function HomeScreen() {
     resumeRecording();
     navigate('/record');
   };
+
+  // Daylight is computed locally (NOAA solar formula) — no network. Weather
+  // is one Open-Meteo fetch on mount; null fields render as dashes if the
+  // call fails (offline first-launch).
+  const daylight = useMemo(() => computeDaylight(activeProject.center), [activeProject.center]);
+  const [weather, setWeather] = useState<WeatherInfo>({ tempC: null, windKph: null, windDir: null });
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchCurrentWeather(activeProject.center, ctrl.signal).then(setWeather);
+    return () => ctrl.abort();
+  }, [activeProject.center]);
   const contours = [];
   for (let i = 0; i < 16; i++) {
     const rx = 60 + i * 26;
@@ -111,9 +142,7 @@ export function HomeScreen() {
         }}
       >
         <span>◉ PROJECT · {activeProject.name.toUpperCase()}</span>
-        <span>
-          GPS <span style={{ color: 'var(--good)' }}>FIX 3.1M</span>
-        </span>
+        <span>{routes.length} ROUTE{routes.length === 1 ? '' : 'S'}</span>
       </div>
 
       {/* Hero greeting */}
@@ -130,9 +159,9 @@ export function HomeScreen() {
             color: 'var(--bone)',
           }}
         >
-          Good morning,
+          {greetingForNow()}
           <br />
-          <span style={{ color: 'var(--blaze)' }}>Adam.</span>
+          <span style={{ color: 'var(--blaze)' }}>{activeProject.name}.</span>
         </div>
         <div
           style={{
@@ -144,9 +173,9 @@ export function HomeScreen() {
             lineHeight: 1.5,
           }}
         >
-          40.7289° N · 122.5208° W
+          {formatCoords(activeProject.center)}
           <br />
-          <span style={{ color: 'var(--moss)' }}>ELEV 482 M · BEARING 284°</span>
+          <span style={{ color: 'var(--moss)' }}>{activeProject.subtitle.toUpperCase()}</span>
         </div>
       </div>
 
@@ -422,10 +451,10 @@ export function HomeScreen() {
         }}
       >
         {[
-          { label: 'SUNSET',   value: '19:42', color: 'var(--bone)' },
-          { label: 'DAYLIGHT', value: '6h 12m', color: 'var(--warn)' },
-          { label: 'TEMP',     value: '14°C',  color: 'var(--bone)' },
-          { label: 'WIND',     value: 'SW 8',  color: 'var(--bone)' },
+          { label: 'SUNSET',   value: daylight.sunset ?? '—',                                              color: 'var(--bone)' },
+          { label: 'DAYLIGHT', value: daylight.daylight ?? '—',                                            color: 'var(--warn)' },
+          { label: 'TEMP',     value: weather.tempC == null ? '—'   : `${weather.tempC}°C`,                color: 'var(--bone)' },
+          { label: 'WIND',     value: weather.windKph == null ? '—' : `${weather.windDir ?? ''} ${weather.windKph}`.trim(), color: 'var(--bone)' },
         ].map((s) => (
           <div key={s.label}>
             <div className="stat-label" style={{ fontSize: 9 }}>{s.label}</div>

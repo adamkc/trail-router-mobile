@@ -109,7 +109,9 @@ const initialState = () => ({
   geoTrack: [] as Array<[number, number]>,
   lastElev: null as number | null,
   capturedWaypoints: [] as CapturedWaypoint[],
-  draftName: 'Hayfork Loop — Leg 2',
+  // Stamp the new draft with a date so the user immediately knows which
+  // recording it is in the library if they save without renaming.
+  draftName: `Recording — ${new Date().toISOString().slice(0, 10)}`,
   draftSaveStatus: 'draft' as SaveStatus,
   gps: 'unknown' as GpsState,
 });

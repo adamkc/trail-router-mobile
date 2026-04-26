@@ -7,6 +7,7 @@ import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
 import {
   MapPin,
+  MapJunction,
   MapLabel,
   MapDraggableVertex,
   MapClickHandler,
@@ -15,6 +16,8 @@ import {
 import { svgArrayToGeo, svgToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
 import { useLibrary, type LibraryRoute } from '../store/library';
 import { useRecording, haversineKm } from '../store/recording';
+import { buildNetwork, findPath, nearestNode } from '../utils/network';
+import { elevationGain } from '../utils/elevation';
 
 /** Map a library route's status onto the network's layer-toggle key. */
 const routeStatusToLayerKey = (s: LibraryRoute['status']): 'optimized' | 'built' | 'draft' | 'proposed' => {
@@ -106,26 +109,75 @@ type SnapKey = 'JCT' | 'CNT' | 'GRD';
 export function NetworkMapScreen() {
   const navigate = useNavigate();
   const loadPlotted = useRecording((s) => s.loadPlotted);
+  const addRoute = useLibrary((s) => s.addRoute);
 
   const [layersOn, setLayersOn] = useState<Record<LayerKey, boolean>>({
     optimized: true, built: true, draft: true, proposed: true,
   });
   const [snaps, setSnaps] = useState<Record<SnapKey, boolean>>({ JCT: true, CNT: true, GRD: false });
 
-  // Plot mode — when on, tapping the map drops a vertex.
-  const [plotMode, setPlotMode] = useState(false);
+  // Three modes share the map canvas:
+  //  • browse — view trails, tap legend, etc.
+  //  • plot   — tap-to-add vertices to sketch a new trail by hand.
+  //  • plan   — tap a start, tap an end; auto-route through the network.
+  const [mode, setMode] = useState<'browse' | 'plot' | 'plan'>('browse');
+  const plotMode = mode === 'plot';
+  const planMode = mode === 'plan';
   const [plotted, setPlotted] = useState<Array<[number, number]>>([]);
 
+  // PLAN mode state: selected start + end snapped to graph nodes.
+  const [planEndpoints, setPlanEndpoints] = useState<{
+    startNodeId: string | null;
+    endNodeId: string | null;
+  }>({ startNodeId: null, endNodeId: null });
+  const [planError, setPlanError] = useState<string | null>(null);
+
   const libraryRoutes = useLibrary((s) => s.routes);
+
+  // Build the routable graph once per library snapshot. Cheap (~10 ms for
+  // ~2.5k vertices) but still worth memoizing — the path-finder calls
+  // nearestNode on every tap and findPath on every endpoint update.
+  const network = useMemo(
+    () => buildNetwork(libraryRoutes.filter((r) => r.geo.length >= 2)),
+    [libraryRoutes],
+  );
+  const routableRoutes = useMemo(
+    () => libraryRoutes.filter((r) => r.geo.length >= 2),
+    [libraryRoutes],
+  );
+
+  // Compute the stitched path whenever both endpoints are set.
+  const plannedPath = useMemo(() => {
+    if (!planEndpoints.startNodeId || !planEndpoints.endNodeId) return null;
+    return findPath(network, routableRoutes, planEndpoints.startNodeId, planEndpoints.endNodeId);
+  }, [network, routableRoutes, planEndpoints]);
 
   const toggleLayer = (k: LayerKey) => setLayersOn((s) => ({ ...s, [k]: !s[k] }));
   const toggleSnap = (k: SnapKey) => setSnaps((s) => ({ ...s, [k]: !s[k] }));
 
   const onMapTap = useCallback((lng: number, lat: number) => {
+    if (planMode) {
+      // Snap to the nearest graph node within 200 m. If the user taps far
+      // from the network, surface that as an inline error rather than a
+      // silent no-op.
+      const snapped = nearestNode(network, [lng, lat], 200);
+      if (!snapped) {
+        setPlanError('Tap closer to a trail (>200 m off the network).');
+        return;
+      }
+      setPlanError(null);
+      setPlanEndpoints((s) => {
+        // 0 → set start. 1 (start only) → set end. 2 → reset to a fresh start.
+        if (!s.startNodeId) return { startNodeId: snapped.id, endNodeId: null };
+        if (!s.endNodeId)   return { startNodeId: s.startNodeId, endNodeId: snapped.id };
+        return { startNodeId: snapped.id, endNodeId: null };
+      });
+      return;
+    }
     if (!plotMode) return;
     let placed: [number, number] = [lng, lat];
     // JCT snap: if the snap chip is on, look across every visible library
-    // route's vertices for the nearest one within 30m of the tap, and snap
+    // route's vertices for the nearest one within 30 m of the tap and snap
     // to that. Tiny improvement, big "this feels real" payoff.
     if (snaps.JCT) {
       let bestDist = Infinity;
@@ -142,7 +194,7 @@ export function NetworkMapScreen() {
       if (bestCoord && bestDist < 30) placed = bestCoord;
     }
     setPlotted((p) => [...p, placed]);
-  }, [plotMode, snaps.JCT, libraryRoutes]);
+  }, [plotMode, planMode, snaps.JCT, libraryRoutes, network]);
 
   const movePlottedVertex = useCallback((i: number, lng: number, lat: number) => {
     setPlotted((prev) => {
@@ -155,19 +207,56 @@ export function NetworkMapScreen() {
   const undoPlot = () => setPlotted((p) => p.slice(0, -1));
 
   const enterPlotMode = () => {
-    setPlotMode(true);
+    setMode('plot');
     setPlotted([]);
   };
   const cancelPlot = () => {
-    setPlotMode(false);
+    setMode('browse');
     setPlotted([]);
   };
   const reviewPlot = () => {
     if (plotted.length < 2) return;
     loadPlotted(plotted);
-    setPlotMode(false);
+    setMode('browse');
     setPlotted([]);
     navigate('/review');
+  };
+
+  const enterPlanMode = () => {
+    setMode('plan');
+    setPlanEndpoints({ startNodeId: null, endNodeId: null });
+    setPlanError(null);
+  };
+  const cancelPlan = () => {
+    setMode('browse');
+    setPlanEndpoints({ startNodeId: null, endNodeId: null });
+    setPlanError(null);
+  };
+  const resetPlan = () => {
+    setPlanEndpoints({ startNodeId: null, endNodeId: null });
+    setPlanError(null);
+  };
+  const savePlannedRoute = () => {
+    if (!plannedPath || plannedPath.coords.length < 2) return;
+    const km = plannedPath.km;
+    const realGain = elevationGain(plannedPath.elevations);
+    const grade = km > 0 ? ((realGain / 10) / km).toFixed(1) : '0.0';
+    const startName = libraryRoutes[network.nodes.get(planEndpoints.startNodeId!)?.routeIdx ?? 0]?.name ?? 'Start';
+    const endName = libraryRoutes[network.nodes.get(planEndpoints.endNodeId!)?.routeIdx ?? 0]?.name ?? 'End';
+    const saved = addRoute({
+      name: startName === endName ? `${startName} · planned` : `${startName} → ${endName}`,
+      km: km.toFixed(1),
+      gain: `+${realGain}`,
+      grade,
+      status: 'draft',
+      tag: 'blaze',
+      spark: plannedPath.elevations.length >= 2 ? plannedPath.elevations.slice() : [],
+      geo: plannedPath.coords,
+      elevations: plannedPath.elevations,
+      waypoints: [],
+    });
+    cancelPlan();
+    navigate(`/details/${saved.id}`);
   };
 
   // Live-distance estimate so the user has a feel for what they've sketched.
@@ -268,6 +357,37 @@ export function NetworkMapScreen() {
               onDrag={(lng, lat) => movePlottedVertex(i, lng, lat)}
             />
           ))}
+
+          {/* Plan mode: junction dots, tap handler, start/end pins, stitched path */}
+          {planMode && <MapClickHandler onTap={onMapTap} />}
+          {planMode && [...network.junctions].slice(0, 80).map((id) => {
+            const n = network.nodes.get(id);
+            if (!n) return null;
+            return <MapJunction key={`jct-${id}`} coord={n.coord} size={6} />;
+          })}
+          {planMode && plannedPath && plannedPath.coords.length >= 2 && (
+            <MapGeoLine
+              id="plan-stitched"
+              coords={plannedPath.coords}
+              color={resolveCssVar('var(--blaze)')}
+              width={4}
+              onTop
+            />
+          )}
+          {planMode && planEndpoints.startNodeId && (
+            (() => {
+              const n = network.nodes.get(planEndpoints.startNodeId);
+              if (!n) return null;
+              return <MapPin coord={n.coord} background={resolveCssVar('var(--good)')} size={16} />;
+            })()
+          )}
+          {planMode && planEndpoints.endNodeId && (
+            (() => {
+              const n = network.nodes.get(planEndpoints.endNodeId);
+              if (!n) return null;
+              return <MapPin coord={n.coord} background={resolveCssVar('var(--danger)')} size={16} />;
+            })()
+          )}
         </MapCanvas>
 
         {/* Top project switcher */}
@@ -426,8 +546,19 @@ export function NetworkMapScreen() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <div style={{ flex: 1 }}>
-            <div className="eyebrow" style={{ color: plotMode ? 'var(--blaze)' : undefined }}>
-              {plotMode ? 'PLOT MODE · TAP THE MAP' : 'PLOT NEW ROUTE'}
+            <div
+              className="eyebrow"
+              style={{ color: plotMode || planMode ? 'var(--blaze)' : undefined }}
+            >
+              {plotMode
+                ? 'PLOT MODE · TAP THE MAP'
+                : planMode
+                ? !planEndpoints.startNodeId
+                  ? 'PLAN ROUTE · TAP START'
+                  : !planEndpoints.endNodeId
+                  ? 'PLAN ROUTE · TAP END'
+                  : 'PLAN ROUTE · STITCHED'
+                : 'PLOT NEW ROUTE'}
             </div>
             <div
               style={{
@@ -439,36 +570,62 @@ export function NetworkMapScreen() {
             >
               {plotMode
                 ? `${plotted.length} vertex${plotted.length === 1 ? '' : 'es'} · ${plottedKm.toFixed(2)} km`
+                : planMode
+                ? plannedPath
+                  ? `${plannedPath.coords.length} vertices · ${plannedPath.km.toFixed(2)} km · +${elevationGain(plannedPath.elevations)} m`
+                  : planEndpoints.startNodeId
+                  ? 'Tap a second point to stitch the route'
+                  : 'Tap any junction or trail point'
                 : 'Snap to junctions, ridges, contours'}
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {(['JCT', 'CNT', 'GRD'] as const).map((label) => {
-              const on = snaps[label];
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => toggleSnap(label)}
-                  style={{
-                    padding: '5px 8px',
-                    borderRadius: 8,
-                    background: on
-                      ? 'color-mix(in oklch, var(--blaze) 18%, var(--surface-2))'
-                      : 'var(--surface-2)',
-                    border: `1px solid ${on ? 'color-mix(in oklch, var(--blaze) 40%, transparent)' : 'var(--line-soft)'}`,
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: 9,
-                    letterSpacing: '0.1em',
-                    color: on ? 'var(--blaze)' : 'var(--moss)',
-                  }}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
+          {!planMode && (
+            <div style={{ display: 'flex', gap: 6 }}>
+              {(['JCT', 'CNT', 'GRD'] as const).map((label) => {
+                const on = snaps[label];
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => toggleSnap(label)}
+                    style={{
+                      padding: '5px 8px',
+                      borderRadius: 8,
+                      background: on
+                        ? 'color-mix(in oklch, var(--blaze) 18%, var(--surface-2))'
+                        : 'var(--surface-2)',
+                      border: `1px solid ${on ? 'color-mix(in oklch, var(--blaze) 40%, transparent)' : 'var(--line-soft)'}`,
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 9,
+                      letterSpacing: '0.1em',
+                      color: on ? 'var(--blaze)' : 'var(--moss)',
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
+
+        {planError && (
+          <div
+            style={{
+              padding: '6px 10px',
+              marginBottom: 8,
+              borderRadius: 8,
+              background: 'color-mix(in oklch, var(--danger) 12%, var(--surface-2))',
+              border: '1px solid color-mix(in oklch, var(--danger) 30%, transparent)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              color: 'var(--danger)',
+              letterSpacing: '0.04em',
+            }}
+          >
+            {planError}
+          </div>
+        )}
 
         {plotMode ? (
           <div style={{ display: 'flex', gap: 8 }}>
@@ -495,16 +652,41 @@ export function NetworkMapScreen() {
               <Icon name="chevron-right" size={16} /> Review {plotted.length} vertex{plotted.length === 1 ? '' : 'es'}
             </button>
           </div>
+        ) : planMode ? (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={cancelPlan}>
+              <Icon name="close" size={16} /> Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={resetPlan}
+              disabled={!planEndpoints.startNodeId}
+              style={{ opacity: planEndpoints.startNodeId ? 1 : 0.4 }}
+              aria-label="Reset endpoints"
+            >
+              <Icon name="undo" size={16} />
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ flex: 2, opacity: plannedPath ? 1 : 0.5 }}
+              onClick={savePlannedRoute}
+              disabled={!plannedPath}
+            >
+              <Icon name="plus" size={16} /> Save planned route
+            </button>
+          </div>
         ) : (
           <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" className="btn btn-primary" style={{ flex: 2 }} onClick={enterPlotMode}>
-              <Icon name="plus" size={16} /> Draw route
+            <button type="button" className="btn btn-primary" style={{ flex: 2 }} onClick={enterPlanMode}>
+              <Icon name="route" size={16} /> Plan route
             </button>
-            <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate('/record')}>
-              <Icon name="record" size={16} color="var(--danger)" /> Record
+            <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={enterPlotMode}>
+              <Icon name="plus" size={16} /> Draw
             </button>
-            <button type="button" className="btn btn-ghost" onClick={() => navigate('/waypoints')} aria-label="Waypoints">
-              <Icon name="waypoint" size={16} />
+            <button type="button" className="btn btn-ghost" onClick={() => navigate('/record')} aria-label="Record">
+              <Icon name="record" size={16} color="var(--danger)" />
             </button>
           </div>
         )}
@@ -521,7 +703,11 @@ export function NetworkMapScreen() {
         >
           {plotMode
             ? 'TAP MAP TO ADD · DRAG VERTEX TO MOVE · UNDO TO REMOVE'
-            : 'TAP DRAW ROUTE · OR USE RECORD TO TRACE WHILE WALKING'}
+            : planMode
+            ? plannedPath && planEndpoints.startNodeId && planEndpoints.endNodeId
+              ? `${network.junctions.size} JUNCTIONS · ROUTED THROUGH NETWORK`
+              : `TAP TO PICK START + END · ${network.junctions.size} JUNCTIONS DETECTED`
+            : 'PLAN: AUTO-ROUTE BETWEEN TRAILS · DRAW: SKETCH BY HAND · RECORD: WALK IT'}
         </div>
       </div>
       <NavPill />

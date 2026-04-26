@@ -91,6 +91,26 @@ export function MapJunction({ coord, size = 12 }: { coord: [number, number]; siz
   return null;
 }
 
+/**
+ * Listens for taps on the parent <MapCanvas>'s MapLibre instance and
+ * reports the [lng, lat]. Use to power plot-mode (tap to drop a vertex).
+ * Renders nothing.
+ */
+export function MapClickHandler({ onTap }: { onTap: (lng: number, lat: number) => void }) {
+  const { map, styleLoaded } = useMapInstance();
+  const onTapRef = useRef(onTap);
+  onTapRef.current = onTap;
+  useEffect(() => {
+    if (!map || !styleLoaded) return;
+    const handler = (e: maplibregl.MapMouseEvent) => {
+      onTapRef.current(e.lngLat.lng, e.lngLat.lat);
+    };
+    map.on('click', handler);
+    return () => { map.off('click', handler); };
+  }, [map, styleLoaded]);
+  return null;
+}
+
 /** Plain text label anchored to lng/lat — used for trail names on the network map. */
 export function MapLabel({
   coord,

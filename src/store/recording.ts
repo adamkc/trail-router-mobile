@@ -47,6 +47,10 @@ interface RecordingState {
   setGpsState: (g: GpsState) => void;
   setDraftName: (n: string) => void;
   setDraftSaveStatus: (s: SaveStatus) => void;
+  /** Load a manually-plotted route (from Network Map plot mode) into the
+   *  store as if it had been recorded, then move into the reviewing state
+   *  so /review can name + save it through the existing flow. */
+  loadPlotted: (coords: Array<[number, number]>, suggestedName?: string) => void;
 }
 
 const HAYFORK: [number, number] = [-122.5208, 40.7289];
@@ -162,6 +166,25 @@ export const useRecording = create<RecordingState>((set) => ({
   setGpsState: (gps) => set({ gps }),
   setDraftName: (draftName) => set({ draftName }),
   setDraftSaveStatus: (draftSaveStatus) => set({ draftSaveStatus }),
+
+  loadPlotted: (coords, suggestedName) => {
+    if (coords.length < 2) return;
+    // Distance: cumulative Haversine.
+    let distance = 0;
+    for (let i = 1; i < coords.length; i++) distance += haversineKm(coords[i - 1], coords[i]);
+    set({
+      ...initialState(),
+      status: 'reviewing',
+      geoTrack: coords,
+      distance: Number(distance.toFixed(3)),
+      // No real GPS / elevation data for a plotted trail — stays at 0 unless a
+      // future enhancement reads DEM tiles to backfill elevation.
+      gain: 0,
+      currentGrade: 0,
+      gps: 'simulated',
+      draftName: suggestedName ?? `Plotted route — ${new Date().toISOString().slice(5, 16).replace('T', ' ')}`,
+    });
+  },
 }));
 
 /** Map the draft save status onto the library route status + tag for list rendering. */

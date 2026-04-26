@@ -1,13 +1,20 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon, type IconName } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
-import { MapPin, MapLabel, FitBoundsToCoords } from '../components/MapMarkers';
+import {
+  MapPin,
+  MapLabel,
+  MapDraggableVertex,
+  MapClickHandler,
+  FitBoundsToCoords,
+} from '../components/MapMarkers';
 import { svgArrayToGeo, svgToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
 import { useLibrary, type LibraryRoute } from '../store/library';
+import { useRecording, haversineKm } from '../store/recording';
 
 /** Map a library route's status onto the network's layer-toggle key. */
 const routeStatusToLayerKey = (s: LibraryRoute['status']): 'optimized' | 'built' | 'draft' | 'proposed' => {
@@ -98,14 +105,58 @@ type SnapKey = 'JCT' | 'CNT' | 'GRD';
 
 export function NetworkMapScreen() {
   const navigate = useNavigate();
+  const loadPlotted = useRecording((s) => s.loadPlotted);
 
   const [layersOn, setLayersOn] = useState<Record<LayerKey, boolean>>({
     optimized: true, built: true, draft: true, proposed: true,
   });
   const [snaps, setSnaps] = useState<Record<SnapKey, boolean>>({ JCT: true, CNT: true, GRD: false });
 
+  // Plot mode — when on, tapping the map drops a vertex.
+  const [plotMode, setPlotMode] = useState(false);
+  const [plotted, setPlotted] = useState<Array<[number, number]>>([]);
+
   const toggleLayer = (k: LayerKey) => setLayersOn((s) => ({ ...s, [k]: !s[k] }));
   const toggleSnap = (k: SnapKey) => setSnaps((s) => ({ ...s, [k]: !s[k] }));
+
+  const onMapTap = useCallback((lng: number, lat: number) => {
+    if (!plotMode) return;
+    setPlotted((p) => [...p, [lng, lat]]);
+  }, [plotMode]);
+
+  const movePlottedVertex = useCallback((i: number, lng: number, lat: number) => {
+    setPlotted((prev) => {
+      const next = prev.slice();
+      next[i] = [lng, lat];
+      return next;
+    });
+  }, []);
+
+  const undoPlot = () => setPlotted((p) => p.slice(0, -1));
+
+  const enterPlotMode = () => {
+    setPlotMode(true);
+    setPlotted([]);
+  };
+  const cancelPlot = () => {
+    setPlotMode(false);
+    setPlotted([]);
+  };
+  const reviewPlot = () => {
+    if (plotted.length < 2) return;
+    loadPlotted(plotted);
+    setPlotMode(false);
+    setPlotted([]);
+    navigate('/review');
+  };
+
+  // Live-distance estimate so the user has a feel for what they've sketched.
+  const plottedKm = useMemo(() => {
+    if (plotted.length < 2) return 0;
+    let d = 0;
+    for (let i = 1; i < plotted.length; i++) d += haversineKm(plotted[i - 1], plotted[i]);
+    return d;
+  }, [plotted]);
 
   const libraryRoutes = useLibrary((s) => s.routes);
 
@@ -170,6 +221,28 @@ export function NetworkMapScreen() {
           })}
           <MapPin coord={geoTrailhead} background={resolveCssVar('var(--good)')}   size={14} />
           <MapPin coord={geoPeak}      background={resolveCssVar('var(--danger)')} size={14} />
+
+          {/* Plot mode: tap-to-add + draggable in-progress vertices */}
+          {plotMode && <MapClickHandler onTap={onMapTap} />}
+          {plotMode && plotted.length >= 2 && (
+            <MapGeoLine
+              id="plot-inprogress"
+              coords={plotted}
+              color={resolveCssVar('var(--blaze)')}
+              width={3.5}
+              dashed
+              onTop
+            />
+          )}
+          {plotMode && plotted.map((coord, i) => (
+            <MapDraggableVertex
+              key={`plot-${i}`}
+              coord={coord}
+              color={resolveCssVar('var(--blaze)')}
+              size={14}
+              onDrag={(lng, lat) => movePlottedVertex(i, lng, lat)}
+            />
+          ))}
         </MapCanvas>
 
         {/* Top project switcher */}
@@ -328,7 +401,9 @@ export function NetworkMapScreen() {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <div style={{ flex: 1 }}>
-            <div className="eyebrow">PLOT NEW ROUTE</div>
+            <div className="eyebrow" style={{ color: plotMode ? 'var(--blaze)' : undefined }}>
+              {plotMode ? 'PLOT MODE · TAP THE MAP' : 'PLOT NEW ROUTE'}
+            </div>
             <div
               style={{
                 fontFamily: 'var(--font-display)',
@@ -337,7 +412,9 @@ export function NetworkMapScreen() {
                 marginTop: 2,
               }}
             >
-              Snap to junctions, ridges, contours
+              {plotMode
+                ? `${plotted.length} vertex${plotted.length === 1 ? '' : 'es'} · ${plottedKm.toFixed(2)} km`
+                : 'Snap to junctions, ridges, contours'}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
@@ -368,17 +445,44 @@ export function NetworkMapScreen() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className="btn btn-primary" style={{ flex: 2 }} onClick={() => navigate('/editor')}>
-            <Icon name="plus" size={16} /> Draw route
-          </button>
-          <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate('/record')}>
-            <Icon name="record" size={16} color="var(--danger)" /> Record
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => navigate('/waypoints')} aria-label="Waypoints">
-            <Icon name="waypoint" size={16} />
-          </button>
-        </div>
+        {plotMode ? (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={cancelPlot}>
+              <Icon name="close" size={16} /> Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={undoPlot}
+              disabled={plotted.length === 0}
+              style={{ opacity: plotted.length === 0 ? 0.4 : 1 }}
+              aria-label="Undo last vertex"
+            >
+              <Icon name="undo" size={16} />
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ flex: 2, opacity: plotted.length < 2 ? 0.5 : 1 }}
+              onClick={reviewPlot}
+              disabled={plotted.length < 2}
+            >
+              <Icon name="chevron-right" size={16} /> Review {plotted.length} vertex{plotted.length === 1 ? '' : 'es'}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="btn btn-primary" style={{ flex: 2 }} onClick={enterPlotMode}>
+              <Icon name="plus" size={16} /> Draw route
+            </button>
+            <button type="button" className="btn btn-ghost" style={{ flex: 1 }} onClick={() => navigate('/record')}>
+              <Icon name="record" size={16} color="var(--danger)" /> Record
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={() => navigate('/waypoints')} aria-label="Waypoints">
+              <Icon name="waypoint" size={16} />
+            </button>
+          </div>
+        )}
 
         <div
           style={{
@@ -390,7 +494,9 @@ export function NetworkMapScreen() {
             textAlign: 'center',
           }}
         >
-          TAP MAP TO PLACE VERTEX · LONG-PRESS TO SNAP TO EXISTING TRAIL
+          {plotMode
+            ? 'TAP MAP TO ADD · DRAG VERTEX TO MOVE · UNDO TO REMOVE'
+            : 'TAP DRAW ROUTE · OR USE RECORD TO TRACE WHILE WALKING'}
         </div>
       </div>
       <NavPill />

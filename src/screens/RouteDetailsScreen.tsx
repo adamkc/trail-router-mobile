@@ -9,6 +9,7 @@ import { DataRow } from '../components/DataRow';
 import { useLibrary, type LibraryRoute } from '../store/library';
 import type { ChipTone } from '../components/Chip';
 import { downloadString, serializeRoutesToGeoJson } from '../utils/geojson';
+import { routeChartData } from '../utils/elevation';
 
 interface StatEntry {
   l: string;
@@ -95,11 +96,15 @@ export function RouteDetailsScreen() {
   }
 
   const stats = useMemo(() => statsForRoute(route), [route]);
-  const slope = useMemo(() => slopeSeriesFromSpark(route.spark), [route.spark]);
-  const elevMin = Math.min(...route.spark);
-  const elevMax = Math.max(...route.spark);
+  // Prefer the real per-vertex elevations when present (Hayfork-imported or
+  // recorded routes), downsampled lightly so 200+ vertex profiles still
+  // render fast in the 90px chart. Falls back to the lower-res `spark`.
+  const chart = useMemo(() => routeChartData(route, 80), [route]);
+  const slope = useMemo(() => slopeSeriesFromSpark(chart), [chart]);
+  const elevMin = Math.min(...chart);
+  const elevMax = Math.max(...chart);
   const accent = tagColor(route.tag);
-  const peakIdx = route.spark.indexOf(elevMax);
+  const peakIdx = chart.indexOf(elevMax);
 
   return (
     <div className="screen">
@@ -246,7 +251,7 @@ export function RouteDetailsScreen() {
             </div>
           </div>
           <div style={{ height: 90, position: 'relative' }}>
-            <ElevChart data={route.spark} height={90} mark={peakIdx} color={accent} />
+            <ElevChart data={chart} height={90} mark={peakIdx} color={accent} />
             <div style={{ position: 'absolute', left: 0, top: 2, fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--moss)' }}>{elevMax}</div>
             <div style={{ position: 'absolute', left: 0, bottom: 2, fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--moss)' }}>{elevMin}</div>
             <div style={{ position: 'absolute', right: 0, bottom: -14, fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--moss)' }}>{route.km} km</div>

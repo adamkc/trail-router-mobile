@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { HashRouter, Link, Route, Routes } from 'react-router-dom';
 import { DesignCanvas } from './components/DesignCanvas';
 import { AndroidDevice } from './components/AndroidDevice';
@@ -11,7 +11,7 @@ import { OptimizerScreen } from './screens/OptimizerScreen';
 import { useIsMobile } from './hooks/useIsMobile';
 import { useLibrary } from './store/library';
 import { usePreferences } from './store/preferences';
-import { loadHayforkProject } from './utils/hayforkData';
+import { backfillElevations, loadHayforkProject } from './utils/hayforkData';
 
 /** IDs of the procedural seed routes baked into the library store. The
  *  auto-import only fires when the user's library is still exactly these. */
@@ -30,38 +30,47 @@ const SEED_IDS = new Set([
  *
  * Guard rationale: a returning user who already recorded or imported routes
  * will have IDs outside SEED_IDS, so we skip and never clobber their work.
+ *
+ * Re-entry rationale: a `useRef` sentinel — not the persisted importedAt
+ * value — gates the effect so we don't re-trigger when our own
+ * `markHayforkImported()` flips the dep, which would cancel the in-flight
+ * elevation backfill via the cleanup function.
  */
 function useHayforkAutoImport() {
-  const importedAt = usePreferences((s) => s.hayforkImportedAt);
-  const markImported = usePreferences((s) => s.markHayforkImported);
+  const startedRef = useRef(false);
   useEffect(() => {
-    if (importedAt) return;
+    if (startedRef.current) return;
+    if (usePreferences.getState().hayforkImportedAt) return;
     const current = useLibrary.getState().routes;
     const isSeedState =
       current.length > 0 && current.every((r) => SEED_IDS.has(r.id));
     if (!isSeedState) {
       // User has touched the library — respect it, just stamp so we don't keep
       // checking on every launch.
-      markImported();
+      usePreferences.getState().markHayforkImported();
       return;
     }
-    let cancelled = false;
+    startedRef.current = true;
     (async () => {
       try {
         const routes = await loadHayforkProject();
-        if (cancelled || routes.length === 0) return;
+        if (routes.length === 0) return;
+        // Drop the routes in immediately so the user sees real trails ASAP,
+        // then upgrade them in place with real Open-Meteo elevations once
+        // the network round-trip completes (~2-4 s for ~10 routes).
         useLibrary.getState().replaceLibrary(routes);
-        markImported();
+        const enriched = await backfillElevations(routes);
+        if (enriched > 0) useLibrary.getState().replaceLibrary(routes);
+        // Stamp last so a hard refresh during the backfill window will
+        // retry on the next launch (importedAt stays null).
+        usePreferences.getState().markHayforkImported();
       } catch (e) {
         // Network unavailable on first launch (offline) — leave seeds in place
         // and try again next launch.
         console.warn('Hayfork auto-import failed:', e);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [importedAt, markImported]);
+  }, []);
 }
 
 function ScreenFrame({ entry }: { entry: (typeof SCREENS)[number] }) {

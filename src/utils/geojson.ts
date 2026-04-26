@@ -91,6 +91,10 @@ export function parseGeoJsonRoutes(text: string): Array<Omit<LibraryRoute, 'id'>
         tag,
         spark: elevs.length >= 2 ? elevs : fallbackSpark,
         geo: coords,
+        // If the source GeoJSON embedded per-vertex elevations under our
+        // custom `elev` property AND the count matches `geo` length, treat
+        // them as the source of truth for the chart.
+        elevations: elevs.length === coords.length ? elevs : [],
         // GeoJSON Features have <wpt>-style waypoints in a separate top-level
         // entry, not embedded in the LineString — so imported routes start with
         // an empty waypoints list. The user can add some via /record + capture.
@@ -113,8 +117,10 @@ export function serializeRoutesToGeoJson(routes: LibraryRoute[]): string {
       km: r.km,
       gain: r.gain,
       grade: r.grade,
-      // Embed elevation as a custom property — non-standard but useful round-trip.
-      elev: r.spark,
+      // Embed elevation as a custom property — non-standard but useful
+      // round-trip. Prefer the full per-vertex array when available so the
+      // chart and gain stay accurate after re-import.
+      elev: r.elevations.length === r.geo.length ? r.elevations : r.spark,
     },
     geometry: {
       type: 'LineString' as const,

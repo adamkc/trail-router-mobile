@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Icon, type IconName } from '../components/Icon';
 import { ElevChart } from '../components/ElevChart';
 import { useLibrary, type LibraryRoute } from '../store/library';
+import { routeChartData } from '../utils/elevation';
 
 interface TabletTrail {
   name: string;
@@ -576,11 +577,16 @@ export function TabletNetworkScreen() {
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--line-soft)' }}>
           <div className="eyebrow" style={{ marginBottom: 8 }}>ELEVATION · CROSS-SECTION</div>
           <div style={{ height: 70 }}>
-            <ElevChart
-              data={selected?.spark ?? [420]}
-              height={70}
-              mark={Math.floor((selected?.spark.length ?? 1) / 2)}
-            />
+            {(() => {
+              const series = selected ? routeChartData(selected, 80) : [420];
+              return (
+                <ElevChart
+                  data={series}
+                  height={70}
+                  mark={Math.floor(series.length / 2)}
+                />
+              );
+            })()}
           </div>
         </div>
 

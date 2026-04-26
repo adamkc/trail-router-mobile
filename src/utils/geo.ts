@@ -49,11 +49,61 @@ export function svgArrayToGeo(
   return pts.map((p) => svgToGeo(p, opts));
 }
 
-/** Resolve `var(--name)` CSS-var references to their literal value (for MapLibre paint props). */
+/** 1×1 canvas reused across calls to convert arbitrary CSS color strings to rgb(). */
+let _colorCanvas: HTMLCanvasElement | null = null;
+let _colorCtx: CanvasRenderingContext2D | null = null;
+const _colorMemo = new Map<string, string>();
+
+/**
+ * Resolve `var(--name)` references AND normalize the result to a plain
+ * `rgb(...)` / `rgba(...)` string. Browsers serialize design-token values
+ * as `oklch(...)`, which MapLibre 4.x's paint validator rejects ("color
+ * expected, oklch(...) found"). Canvas painting is the cheapest reliable
+ * way to coerce any browser-accepted color (oklch, color(), named, hex,
+ * var) into a legacy rgb form.
+ */
 export function resolveCssVar(value: string): string {
-  if (!value.startsWith('var(')) return value;
-  const match = value.match(/var\((--[\w-]+)\)/);
-  if (!match) return value;
   if (typeof window === 'undefined') return value;
-  return getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim() || value;
+  const memo = _colorMemo.get(value);
+  if (memo) return memo;
+
+  // Step 1: dereference var(--token) via getComputedStyle.
+  let resolved = value;
+  if (value.startsWith('var(')) {
+    const match = value.match(/var\((--[\w-]+)\)/);
+    if (match) {
+      const v = getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim();
+      if (v) resolved = v;
+    }
+  }
+  // If already legacy-rgb, skip the canvas trip.
+  if (/^rgba?\(/.test(resolved)) {
+    _colorMemo.set(value, resolved);
+    return resolved;
+  }
+
+  // Step 2: paint into a 1×1 canvas; the browser converts to sRGB display
+  // space and we read the rgba pixel back as a legacy rgb() string.
+  if (!_colorCanvas) {
+    _colorCanvas = document.createElement('canvas');
+    _colorCanvas.width = 1;
+    _colorCanvas.height = 1;
+    _colorCtx = _colorCanvas.getContext('2d');
+  }
+  if (!_colorCtx) {
+    _colorMemo.set(value, resolved);
+    return resolved;
+  }
+  try {
+    _colorCtx.clearRect(0, 0, 1, 1);
+    _colorCtx.fillStyle = resolved;
+    _colorCtx.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = _colorCtx.getImageData(0, 0, 1, 1).data;
+    const rgb = a < 255 ? `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})` : `rgb(${r}, ${g}, ${b})`;
+    _colorMemo.set(value, rgb);
+    return rgb;
+  } catch {
+    _colorMemo.set(value, resolved);
+    return resolved;
+  }
 }

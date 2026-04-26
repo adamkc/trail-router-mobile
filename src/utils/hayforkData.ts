@@ -9,7 +9,7 @@
 
 import type { LibraryRoute, RouteStatus } from '../store/library';
 import type { ChipTone } from '../components/Chip';
-import { resampleSpark } from './elevation';
+import { elevationGain, fetchElevations, resampleSpark } from './elevation';
 
 interface EditorTrailFeature {
   type: 'Feature';
@@ -88,6 +88,79 @@ function slugifyId(name: string, idx: number): string {
   return `hayfork-${slug}`;
 }
 
+/** Pick `n` evenly-spaced indices from a length, including first + last. */
+function evenIndices(length: number, n: number): number[] {
+  if (length <= n) return Array.from({ length }, (_, i) => i);
+  const step = (length - 1) / (n - 1);
+  return Array.from({ length: n }, (_, i) => Math.round(i * step));
+}
+
+/**
+ * Expand a downsampled elevation array back to one value per `geo` vertex
+ * via linear interpolation between sampled indices. Avoids the API trip
+ * for every single vertex while still giving a smooth per-vertex profile
+ * for the chart and grade analysis.
+ */
+function interpolateElevations(
+  geoLen: number,
+  sampleIdx: number[],
+  sampled: number[],
+): number[] {
+  if (sampleIdx.length === 0 || sampled.length !== sampleIdx.length) return [];
+  const out: number[] = new Array(geoLen);
+  let segIdx = 0;
+  for (let i = 0; i < geoLen; i++) {
+    while (segIdx < sampleIdx.length - 1 && sampleIdx[segIdx + 1] < i) segIdx++;
+    if (i <= sampleIdx[0]) {
+      out[i] = sampled[0];
+    } else if (i >= sampleIdx[sampleIdx.length - 1]) {
+      out[i] = sampled[sampled.length - 1];
+    } else {
+      const a = sampleIdx[segIdx];
+      const b = sampleIdx[segIdx + 1];
+      const t = (i - a) / (b - a || 1);
+      out[i] = Math.round(sampled[segIdx] * (1 - t) + sampled[segIdx + 1] * t);
+    }
+  }
+  return out;
+}
+
+/**
+ * Fetch real Open-Meteo elevations for every route in `routes` (mutates in
+ * place). Each route is downsampled to ~80 vertices for the API trip then
+ * expanded back to one elevation per geo vertex. Recomputes `spark` and
+ * `gain` from the real profile. Silent on network failure — leaves the
+ * synthesized stats in place.
+ */
+export async function backfillElevations(routes: LibraryRoute[]): Promise<number> {
+  let successCount = 0;
+  // Open-Meteo's free tier allows ~600 calls/min. We burn one call per route
+  // (downsampled to ≤80 coords). A small inter-route delay keeps us well clear
+  // of any per-IP burst throttling, and a single retry handles transient drops.
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  for (let routeIdx = 0; routeIdx < routes.length; routeIdx++) {
+    const r = routes[routeIdx];
+    if (r.geo.length < 2) continue;
+    const idx = evenIndices(r.geo.length, Math.min(80, r.geo.length));
+    const sampled = idx.map((i) => r.geo[i]);
+    let elevs = await fetchElevations(sampled);
+    if (!elevs || elevs.length !== sampled.length) {
+      // One retry after a longer pause — covers brief 429/503 blips.
+      await sleep(800);
+      elevs = await fetchElevations(sampled);
+    }
+    if (!elevs || elevs.length !== sampled.length) continue;
+    const full = interpolateElevations(r.geo.length, idx, elevs);
+    r.elevations = full;
+    r.spark = resampleSpark(full, 14);
+    const realGain = elevationGain(full);
+    if (realGain > 0) r.gain = `+${realGain}`;
+    successCount += 1;
+    if (routeIdx < routes.length - 1) await sleep(200);
+  }
+  return successCount;
+}
+
 export async function loadHayforkProject(): Promise<LibraryRoute[]> {
   const res = await fetch(`${import.meta.env.BASE_URL ?? '/'}data/hayfork-trails.geojson`);
   if (!res.ok) throw new Error(`Failed to load Hayfork data: HTTP ${res.status}`);
@@ -119,6 +192,9 @@ export async function loadHayforkProject(): Promise<LibraryRoute[]> {
       tag,
       spark: syntheticSparkForFeature(props),
       geo: coords,
+      // Filled in by backfillElevations(routes) after parse — left empty
+      // here so the loader stays sync-only and the network step is opt-in.
+      elevations: [],
       // No waypoints in the editor's trails GeoJSON — leave empty.
       waypoints: [],
     });

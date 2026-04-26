@@ -32,6 +32,11 @@ export interface LibraryRoute {
   /** Geographic [lng, lat] line. Recordings store their captured GPS path here;
    *  seed routes get a procedurally synthesized path around Hayfork. */
   geo: Array<[number, number]>;
+  /** Per-vertex elevation in meters; same length as `geo` when populated.
+   *  Empty `[]` when unknown (legacy seed/migrated routes). When present,
+   *  used as the source of truth for the elevation chart, gain calc, and
+   *  grade analysis instead of the lower-resolution `spark` summary. */
+  elevations: number[];
   /** Waypoints captured during recording or added later. */
   waypoints: RouteWaypoint[];
 }
@@ -119,7 +124,10 @@ const SEED_BASE: Array<Omit<LibraryRoute, 'geo' | 'waypoints'>> = [
 
 const SEED: LibraryRoute[] = SEED_BASE.map((r) => {
   const geo = syntheticGeoFor(r.id, Math.max(8, r.spark.length));
-  return { ...r, geo, waypoints: syntheticWaypoints({ id: r.id, geo }) };
+  // Seed routes have no real elevations — the synthesized `spark` is used
+  // for chart display until the user records a real route or imports the
+  // Hayfork project (which fetches Open-Meteo elevations on import).
+  return { ...r, geo, elevations: [], waypoints: syntheticWaypoints({ id: r.id, geo }) };
 });
 
 export const useLibrary = create<LibraryState>()(
@@ -153,9 +161,10 @@ export const useLibrary = create<LibraryState>()(
     }),
     {
       name: 'trail-router-library',
-      // v1 → v2: added `geo` field. v2 → v3: added `waypoints` field.
-      // Migrate backfills both for any older persisted entries.
-      version: 3,
+      // v1 → v2: added `geo`. v2 → v3: added `waypoints`. v3 → v4: added
+      // `elevations` (per-vertex meters; empty for legacy entries — they
+      // continue using the lower-res `spark` until re-imported/re-recorded).
+      version: 4,
       partialize: (state) => ({ routes: state.routes }),
       migrate: (persisted, fromVersion) => {
         const state = persisted as { routes?: LibraryRoute[] } | undefined;
@@ -168,6 +177,11 @@ export const useLibrary = create<LibraryState>()(
         if (fromVersion < 3) {
           state.routes = state.routes.map((r) =>
             Array.isArray(r.waypoints) ? r : { ...r, waypoints: syntheticWaypoints({ id: r.id, geo: r.geo }) },
+          );
+        }
+        if (fromVersion < 4) {
+          state.routes = state.routes.map((r) =>
+            Array.isArray(r.elevations) ? r : { ...r, elevations: [] },
           );
         }
         return state;

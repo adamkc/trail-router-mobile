@@ -103,6 +103,10 @@ export function OptimizerScreen() {
       tag: 'blaze',
       spark: route.spark,
       geo: afterGeo,
+      // Optimization preserves vertex count (laplacian smoothing only nudges
+      // each interior point), so the original elevations remain a valid
+      // approximation. Carry them through; a fresh fetch can be added later.
+      elevations: route.elevations,
       waypoints: route.waypoints,
     });
     navigate(`/details/${saved.id}`);

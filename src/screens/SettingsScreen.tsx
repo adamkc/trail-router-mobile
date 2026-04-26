@@ -9,7 +9,7 @@ import { useRecording } from '../store/recording';
 import { usePreferences } from '../store/preferences';
 import { downloadString, parseGeoJsonRoutes, pickJsonFile, serializeRoutesToGeoJson } from '../utils/geojson';
 import { serializeRoutesToGpx } from '../utils/gpx';
-import { loadHayforkProject } from '../utils/hayforkData';
+import { backfillElevations, loadHayforkProject } from '../utils/hayforkData';
 
 export function SettingsScreen() {
   const navigate = useNavigate();
@@ -59,7 +59,18 @@ export function SettingsScreen() {
       }
       replaceLibrary(fresh);
       markHayforkImported();
-      setImportStatus(`Reloaded ${fresh.length} routes from Hayfork project`);
+      setImportStatus(`Reloaded ${fresh.length} routes — fetching real elevations…`);
+      const enriched = await backfillElevations(fresh);
+      if (enriched > 0) {
+        replaceLibrary(fresh);
+        setImportStatus(
+          `Reloaded ${fresh.length} routes · real Open-Meteo elevations on ${enriched}`,
+        );
+      } else {
+        setImportStatus(
+          `Reloaded ${fresh.length} routes · elevation API unavailable, using synthetic profile`,
+        );
+      }
     } catch (e) {
       setImportStatus(`Reload failed: ${(e as Error).message}`);
     }

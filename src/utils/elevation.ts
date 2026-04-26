@@ -54,3 +54,19 @@ export function resampleSpark(elevs: number[], n = 12): number[] {
   const step = (elevs.length - 1) / (n - 1);
   return Array.from({ length: n }, (_, i) => elevs[Math.round(i * step)]);
 }
+
+/**
+ * Pick the best elevation series for a chart from a route. Prefers the
+ * full per-vertex `elevations` array (real, smooth, accurate) when it's
+ * populated; falls back to the lower-resolution `spark` summary used by
+ * legacy/seeded routes. Optionally downsamples to `maxPts` for compact
+ * charts where 200+ vertices would just be visual noise.
+ */
+export function routeChartData(
+  route: { spark: number[]; elevations: number[] },
+  maxPts?: number,
+): number[] {
+  const series = route.elevations.length >= 2 ? route.elevations : route.spark;
+  if (!maxPts || series.length <= maxPts) return series;
+  return resampleSpark(series, maxPts);
+}

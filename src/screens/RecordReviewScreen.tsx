@@ -90,9 +90,11 @@ export function RecordReviewScreen() {
     let realSpark = elev;
     let realGain = displayGain;
     let realGrade = avgGrade;
+    let realElevations: number[] = [];
     try {
       const fetched = await fetchElevations(displayTrack);
       if (fetched && fetched.length === displayTrack.length) {
+        realElevations = fetched;
         realGain = elevationGain(fetched);
         realSpark = resampleSpark(fetched, 14);
         realGrade = displayDistance > 0
@@ -112,6 +114,7 @@ export function RecordReviewScreen() {
       tag,
       spark: realSpark,
       geo: displayTrack,
+      elevations: realElevations,
       // Each captured waypoint already carries its coord; carry them onto the
       // saved route so /map/:id, /waypoints/:id, and the inspector can show them.
       waypoints: capturedWaypoints.map((w) => ({

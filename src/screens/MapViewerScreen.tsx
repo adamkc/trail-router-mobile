@@ -8,6 +8,7 @@ import { MapGeoLine } from '../components/MapGeoLine';
 import { MapPin, MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers';
 import { ElevChart } from '../components/ElevChart';
 import { resolveCssVar, HAYFORK } from '../utils/geo';
+import { routeChartData } from '../utils/elevation';
 import { useLibrary } from '../store/library';
 import type { ChipTone } from '../components/Chip';
 
@@ -224,7 +225,12 @@ export function MapViewerScreen() {
         </div>
 
         <div style={{ marginTop: 12, height: 44 }}>
-          <ElevChart data={route.spark} height={44} mark={Math.floor(route.spark.length / 2)} color={accent} />
+          <ElevChart
+            data={routeChartData(route, 60)}
+            height={44}
+            mark={Math.floor(routeChartData(route, 60).length / 2)}
+            color={accent}
+          />
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>

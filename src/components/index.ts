@@ -4,6 +4,7 @@ export { NavPill } from './NavPill';
 export { TopoMap } from './TopoMap';
 export { MapCanvas, useMapInstance } from './MapCanvas';
 export { MapGeoLine } from './MapGeoLine';
+export { MapGradeLine } from './MapGradeLine';
 export { MapHillshade } from './MapHillshade';
 export { MapToolStack } from './MapToolStack';
 export { CompassBadge } from './CompassBadge';

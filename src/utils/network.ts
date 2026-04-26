@@ -149,6 +149,55 @@ export function nearestNode(
 }
 
 /**
+ * Project a tap onto the *nearest segment* of any library route — not just
+ * the nearest vertex. Returns the closest [lng, lat] point on the route's
+ * polyline (which may lie between vertices) plus the distance in metres.
+ *
+ * Used by PLOT mode so dragging your finger near a trail snaps cleanly
+ * onto the path — the JCT-only snap was vertex-only, which jumped in
+ * coarse steps along sparsely-sampled trails.
+ */
+export function snapToNearestSegment(
+  routes: LibraryRoute[],
+  coord: [number, number],
+  maxDistM = 30,
+): { coord: [number, number]; distM: number; routeIdx: number; segmentIdx: number } | null {
+  let best: {
+    coord: [number, number]; distM: number; routeIdx: number; segmentIdx: number;
+  } | null = null;
+  for (let r = 0; r < routes.length; r++) {
+    const route = routes[r];
+    for (let i = 0; i < route.geo.length - 1; i++) {
+      const proj = projectPointOnSegment(coord, route.geo[i], route.geo[i + 1]);
+      const distM = haversineKm(coord, proj) * 1000;
+      if (distM > maxDistM) continue;
+      if (!best || distM < best.distM) {
+        best = { coord: proj, distM, routeIdx: r, segmentIdx: i };
+      }
+    }
+  }
+  return best;
+}
+
+/** Project a point onto the line segment a–b in lng/lat space (planar
+ *  approximation; fine at trail scale where segments are <1 km). */
+function projectPointOnSegment(
+  p: [number, number],
+  a: [number, number],
+  b: [number, number],
+): [number, number] {
+  const ax = a[0], ay = a[1];
+  const bx = b[0], by = b[1];
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return [ax, ay];
+  let t = ((p[0] - ax) * dx + (p[1] - ay) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return [ax + t * dx, ay + t * dy];
+}
+
+/**
  * Dijkstra shortest-path between two graph nodes by total km. Returns the
  * stitched polyline + cumulative distance, or null if no path exists.
  *

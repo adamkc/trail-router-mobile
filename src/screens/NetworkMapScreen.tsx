@@ -5,6 +5,7 @@ import { NavPill } from '../components/NavPill';
 import { Icon, type IconName } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
+import { MapGradeLine } from '../components/MapGradeLine';
 import { MapToolStack } from '../components/MapToolStack';
 import {
   MapPin,
@@ -17,7 +18,7 @@ import {
 import { svgArrayToGeo, svgToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
 import { useLibrary, type LibraryRoute } from '../store/library';
 import { useRecording, haversineKm } from '../store/recording';
-import { buildNetwork, findPath, nearestNode } from '../utils/network';
+import { buildNetwork, findPath, nearestNode, snapToNearestSegment } from '../utils/network';
 import { elevationGain } from '../utils/elevation';
 
 /** Map a library route's status onto the network's layer-toggle key. */
@@ -109,6 +110,9 @@ export function NetworkMapScreen() {
     optimized: true, built: true, draft: true, proposed: true,
   });
   const [snaps, setSnaps] = useState<Record<SnapKey, boolean>>({ JCT: true, CNT: true, GRD: false });
+  // When on, color trails by per-segment grade (green / cyan / amber / red)
+  // instead of by route status. Only renders for routes with real elevations.
+  const [gradeOverlay, setGradeOverlay] = useState(false);
 
   // Three modes share the map canvas:
   //  • browse — view trails, tap legend, etc.
@@ -170,22 +174,27 @@ export function NetworkMapScreen() {
     }
     if (!plotMode) return;
     let placed: [number, number] = [lng, lat];
-    // JCT snap: if the snap chip is on, look across every visible library
-    // route's vertices for the nearest one within 30 m of the tap and snap
-    // to that. Tiny improvement, big "this feels real" payoff.
+    // JCT snap: when on, project the tap onto the nearest *segment* of any
+    // route within 30 m (true point-on-line snap, not just nearest vertex).
+    // Falls back to the closest vertex if no segment is within range.
     if (snaps.JCT) {
-      let bestDist = Infinity;
-      let bestCoord: [number, number] | null = null;
-      for (const r of libraryRoutes) {
-        for (const v of r.geo) {
-          const d = haversineKm([lng, lat], v) * 1000;
-          if (d < bestDist) {
-            bestDist = d;
-            bestCoord = v;
+      const seg = snapToNearestSegment(libraryRoutes, [lng, lat], 30);
+      if (seg) {
+        placed = seg.coord;
+      } else {
+        let bestDist = Infinity;
+        let bestCoord: [number, number] | null = null;
+        for (const r of libraryRoutes) {
+          for (const v of r.geo) {
+            const d = haversineKm([lng, lat], v) * 1000;
+            if (d < bestDist) {
+              bestDist = d;
+              bestCoord = v;
+            }
           }
         }
+        if (bestCoord && bestDist < 30) placed = bestCoord;
       }
-      if (bestCoord && bestDist < 30) placed = bestCoord;
     }
     setPlotted((p) => [...p, placed]);
   }, [plotMode, planMode, snaps.JCT, libraryRoutes, network]);
@@ -303,17 +312,28 @@ export function NetworkMapScreen() {
       <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
         <MapCanvas center={HAYFORK} zoom={14}>
           <FitBoundsToCoords coords={fitCoords} padding={48} />
-          {visibleLibraryRoutes.map((r) => (
-            <MapGeoLine
-              key={r.id}
-              id={`net-${r.id}`}
-              coords={r.geo}
-              color={r.lineColor}
-              width={r.status === 'optimized' ? 3 : 2.5}
-              dashed={r.status === 'draft' || r.status === 'review'}
-              onTop={r.status === 'optimized'}
-            />
-          ))}
+          {visibleLibraryRoutes.map((r) => {
+            const useGrade = gradeOverlay && r.elevations.length === r.geo.length && r.elevations.length >= 2;
+            return useGrade ? (
+              <MapGradeLine
+                key={r.id}
+                id={`net-${r.id}`}
+                coords={r.geo}
+                elevations={r.elevations}
+                width={r.status === 'optimized' ? 3 : 2.5}
+              />
+            ) : (
+              <MapGeoLine
+                key={r.id}
+                id={`net-${r.id}`}
+                coords={r.geo}
+                color={r.lineColor}
+                width={r.status === 'optimized' ? 3 : 2.5}
+                dashed={r.status === 'draft' || r.status === 'review'}
+                onTop={r.status === 'optimized'}
+              />
+            );
+          })}
           {/* Tag each route with a small mono label at its midpoint */}
           {visibleLibraryRoutes.map((r) => {
             const mid = r.geo[Math.floor(r.geo.length / 2)];
@@ -484,12 +504,43 @@ export function NetworkMapScreen() {
             );
           })}
           <div style={{ height: 1, background: 'var(--line-soft)', margin: '8px 0' }} />
+          <button
+            type="button"
+            onClick={() => setGradeOverlay((v) => !v)}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '4px 0',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              color: gradeOverlay ? 'var(--blaze)' : 'var(--bone-dim)',
+              letterSpacing: '0.05em',
+              background: 'transparent',
+              border: 'none',
+            }}
+          >
+            <div
+              style={{
+                width: 16,
+                height: 3,
+                borderRadius: 2,
+                background: gradeOverlay
+                  ? 'linear-gradient(90deg, var(--good) 0 33%, var(--warn) 33% 66%, var(--danger) 66% 100%)'
+                  : 'var(--moss)',
+              }}
+            />
+            <span style={{ flex: 1, textAlign: 'left' }}>{gradeOverlay ? 'GRADE: ON' : 'GRADE'}</span>
+            <span style={{ color: 'var(--moss)' }}>{gradeOverlay ? '%' : ''}</span>
+          </button>
           <div
             style={{
               fontFamily: 'var(--font-mono)',
               fontSize: 9,
               color: 'var(--moss)',
               letterSpacing: '0.08em',
+              marginTop: 6,
             }}
           >
             CONTOURS 10M · HILLSHADE

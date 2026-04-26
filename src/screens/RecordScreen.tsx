@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
@@ -7,12 +7,19 @@ import { Icon } from '../components/Icon';
 import { MapCanvas, useMapInstance } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
 import { ElevChart } from '../components/ElevChart';
-import { useRecording, type GpsState } from '../store/recording';
+import { useRecording, haversineKm, type GpsState } from '../store/recording';
+import { useLibrary } from '../store/library';
 
 const HAYFORK: [number, number] = [-122.5208, 40.7289];
 
 export function RecordScreen() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const followId = searchParams.get('follow');
+  const followRoute = useLibrary((s) =>
+    followId ? s.routes.find((r) => r.id === followId) ?? null : null,
+  );
+
   const status       = useRecording((s) => s.status);
   const elapsed      = useRecording((s) => s.elapsed);
   const distance     = useRecording((s) => s.distance);
@@ -93,6 +100,20 @@ export function RecordScreen() {
   const overTarget = currentGrade > targetGrade + 1;
   const isPaused = status === 'paused';
 
+  // Off-track distance: nearest follow-vertex to current position, in meters.
+  // (A line-projection would be more accurate; vertex distance is fine for demo + small per-vertex steps.)
+  const offTrackMeters = useMemo(() => {
+    if (!followRoute || geoTrack.length === 0) return null;
+    const here = geoTrack[geoTrack.length - 1];
+    let best = Infinity;
+    for (const v of followRoute.geo) {
+      const d = haversineKm(here, v) * 1000;
+      if (d < best) best = d;
+    }
+    return Math.round(best);
+  }, [followRoute, geoTrack]);
+  const onTrack = offTrackMeters != null && offTrackMeters < 30;
+
   const handleTogglePause = () => {
     if (status === 'recording') pause();
     else if (status === 'paused') resume();
@@ -112,7 +133,18 @@ export function RecordScreen() {
 
       {/* Map layer */}
       <div style={{ position: 'absolute', inset: 0 }}>
-        <MapCanvas center={geoTrack[geoTrack.length - 1] ?? HAYFORK} zoom={16}>
+        <MapCanvas center={followRoute?.geo[0] ?? geoTrack[geoTrack.length - 1] ?? HAYFORK} zoom={16}>
+          {/* Target trail (if following) — faint dashed underlay */}
+          {followRoute && followRoute.geo.length >= 2 && (
+            <MapGeoLine
+              id="rec-follow"
+              coords={followRoute.geo}
+              color={onTrack ? '#74D5C6' : '#8E9483'}
+              width={3}
+              dashed
+              glow={false}
+            />
+          )}
           <MapGeoLine id="rec-track" coords={geoTrack} color="#E88A3C" width={4} onTop />
           <FollowUserCamera coord={geoTrack[geoTrack.length - 1] ?? null} active={status === 'recording'} />
           <MapDot coord={geoTrack[0] ?? null} color="oklch(0.74 0.14 145)" outerColor="#12160F" size={14} />
@@ -145,6 +177,24 @@ export function RecordScreen() {
             <div className="stat-label" style={{ color: isPaused ? 'var(--moss)' : 'var(--danger)' }}>
               {isPaused ? 'PAUSED' : 'RECORDING'}
             </div>
+            {followRoute && (
+              <div
+                style={{
+                  marginLeft: 8,
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9,
+                  letterSpacing: '0.08em',
+                  color: onTrack ? 'var(--good)' : 'var(--warn)',
+                  background: onTrack
+                    ? 'color-mix(in oklch, var(--good) 18%, transparent)'
+                    : 'color-mix(in oklch, var(--warn) 18%, transparent)',
+                }}
+              >
+                {offTrackMeters == null ? 'FOLLOW' : onTrack ? `ON TRACK · ${offTrackMeters}M` : `OFF · ${offTrackMeters}M`}
+              </div>
+            )}
             <div
               style={{
                 marginLeft: 'auto',

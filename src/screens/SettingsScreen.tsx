@@ -6,20 +6,51 @@ import { Icon } from '../components/Icon';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { useLibrary } from '../store/library';
 import { useRecording } from '../store/recording';
+import { downloadString, parseGeoJsonRoutes, pickJsonFile, serializeRoutesToGeoJson } from '../utils/geojson';
 
 export function SettingsScreen() {
   const navigate = useNavigate();
   const routes = useLibrary((s) => s.routes);
+  const addRoute = useLibrary((s) => s.addRoute);
   const status = useRecording((s) => s.status);
   const [units, setUnits] = useState<'km' | 'mi'>('km');
   const [wifiOnly, setWifiOnly] = useState(true);
   const [haptics, setHaptics] = useState(true);
   const [highAccuracy, setHighAccuracy] = useState(true);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
 
   const handleClearLibrary = () => {
     if (!confirm(`Clear all ${routes.length} saved routes? This can't be undone.`)) return;
     localStorage.removeItem('trail-router-library');
     location.reload();
+  };
+
+  const handleImport = async () => {
+    setImportStatus(null);
+    try {
+      const file = await pickJsonFile();
+      if (!file) return;
+      const parsed = parseGeoJsonRoutes(file.text);
+      if (parsed.length === 0) {
+        setImportStatus(`No LineString features found in ${file.name}`);
+        return;
+      }
+      for (const r of parsed) addRoute(r);
+      setImportStatus(`Imported ${parsed.length} route${parsed.length === 1 ? '' : 's'} from ${file.name}`);
+    } catch (e) {
+      setImportStatus(`Import failed: ${(e as Error).message}`);
+    }
+  };
+
+  const handleExportAll = () => {
+    if (routes.length === 0) {
+      setImportStatus('Library is empty — nothing to export');
+      return;
+    }
+    const json = serializeRoutesToGeoJson(routes);
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadString(`trail-router-library-${stamp}.geojson`, 'application/geo+json', json);
+    setImportStatus(`Exported ${routes.length} routes`);
   };
 
   return (
@@ -99,12 +130,41 @@ export function SettingsScreen() {
         {/* Section: Data */}
         <SectionLabel>DATA</SectionLabel>
         <Card>
+          <NavRow
+            label="Import GeoJSON…"
+            sub="Add LineString features from a .geojson file (Strava, OSM, QGIS export)"
+            onClick={handleImport}
+          />
+          <Divider />
+          <NavRow
+            label="Export library"
+            sub={`Download all ${routes.length} routes as GeoJSON`}
+            onClick={handleExportAll}
+          />
+          <Divider />
           <DangerRow
             label="Clear saved routes"
             sub={`Removes all ${routes.length} entries from local storage`}
             onClick={handleClearLibrary}
           />
         </Card>
+        {importStatus && (
+          <div
+            style={{
+              marginTop: 8,
+              padding: '10px 12px',
+              borderRadius: 10,
+              background: 'color-mix(in oklch, var(--blaze) 12%, var(--surface-2))',
+              border: '1px solid color-mix(in oklch, var(--blaze) 35%, transparent)',
+              color: 'var(--bone)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 11,
+              letterSpacing: '0.04em',
+            }}
+          >
+            {importStatus}
+          </div>
+        )}
 
         {/* Section: About */}
         <SectionLabel>ABOUT</SectionLabel>

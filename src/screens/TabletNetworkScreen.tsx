@@ -1,5 +1,8 @@
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Icon, type IconName } from '../components/Icon';
 import { ElevChart } from '../components/ElevChart';
+import { useLibrary, type LibraryRoute } from '../store/library';
 
 interface TabletTrail {
   name: string;
@@ -24,13 +27,13 @@ const NETWORK: TabletTrail[] = [
   { name: 'Meadow Link',  color: 'var(--topo)', pts: [[460, 560], [400, 470], [355, 410], [325, 350]], solid: false },
 ];
 
-const RAIL: Array<{ icon: IconName; label: string; active?: boolean }> = [
-  { icon: 'compass',  label: 'Home'       },
-  { icon: 'layers',   label: 'Projects', active: true },
-  { icon: 'waypoint', label: 'Waypoints'  },
-  { icon: 'record',   label: 'Record'     },
-  { icon: 'download', label: 'Offline'    },
-  { icon: 'settings', label: 'Settings'   },
+const RAIL: Array<{ icon: IconName; label: string; to: string }> = [
+  { icon: 'compass',  label: 'Home',      to: '/home'      },
+  { icon: 'layers',   label: 'Projects',  to: '/tablet'    },
+  { icon: 'waypoint', label: 'Waypoints', to: '/waypoints' },
+  { icon: 'record',   label: 'Record',    to: '/record'    },
+  { icon: 'download', label: 'Offline',   to: '/offline'   },
+  { icon: 'settings', label: 'Settings',  to: '/settings'  },
 ];
 
 const LAYER_TOGGLES = [
@@ -38,13 +41,6 @@ const LAYER_TOGGLES = [
   { label: 'BUILT',     color: 'var(--good)',  on: true },
   { label: 'DRAFT',     color: 'var(--bone)',  on: true },
   { label: 'PROPOSED',  color: 'var(--topo)',  on: true },
-];
-
-const STATS: Array<[string, string, string | null]> = [
-  ['DISTANCE',  '3.6 km', null],
-  ['GAIN',      '+412 m', 'var(--blaze)'],
-  ['AVG GRADE', '7.1%',   'var(--good)'],
-  ['MAX GRADE', '11.8%',  'var(--warn)'],
 ];
 
 const INSPECTOR_WAYPOINTS = [
@@ -55,7 +51,27 @@ const INSPECTOR_WAYPOINTS = [
 
 const TOOL_ICONS: IconName[] = ['mountain', 'compass', 'target', 'search'];
 
+function statsForRoute(r: LibraryRoute): Array<[string, string, string | null]> {
+  const slope = r.spark.length > 1 ? r.spark.slice(1).map((v, i) => Math.abs(v - r.spark[i])) : [0];
+  const maxGrade = (Math.max(...slope) / 8).toFixed(1);
+  return [
+    ['DISTANCE',  `${r.km} km`,           null],
+    ['GAIN',      `${r.gain} m`,          'var(--blaze)'],
+    ['AVG GRADE', `${r.grade}%`,          'var(--good)'],
+    ['MAX GRADE', `${maxGrade}%`,         'var(--warn)'],
+  ];
+}
+
 export function TabletNetworkScreen() {
+  const navigate = useNavigate();
+  const routes = useLibrary((s) => s.routes);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = useMemo(
+    () => (selectedId ? routes.find((r) => r.id === selectedId) : null) ?? routes[0],
+    [selectedId, routes],
+  );
+
+  const stats = selected ? statsForRoute(selected) : [];
   return (
     <div
       style={{
@@ -96,34 +112,41 @@ export function TabletNetworkScreen() {
             <path d="M3 19 L8 12 L12 16 L16 8 L21 19 Z" fill="#1A1208" />
           </svg>
         </div>
-        {RAIL.map((it) => (
-          <div
-            key={it.label}
-            style={{
-              width: 60,
-              padding: '10px 0',
-              borderRadius: 12,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 4,
-              marginBottom: 6,
-              background: it.active ? 'color-mix(in oklch, var(--blaze) 15%, transparent)' : 'transparent',
-            }}
-          >
-            <Icon name={it.icon} size={22} color={it.active ? 'var(--blaze)' : 'var(--bone-dim)'} />
-            <div
+        {RAIL.map((it) => {
+          const active = it.to === '/tablet';
+          return (
+            <button
+              key={it.label}
+              type="button"
+              onClick={() => navigate(it.to)}
               style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: 9,
-                letterSpacing: '0.08em',
-                color: it.active ? 'var(--blaze)' : 'var(--moss)',
+                width: 60,
+                padding: '10px 0',
+                borderRadius: 12,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 4,
+                marginBottom: 6,
+                background: active ? 'color-mix(in oklch, var(--blaze) 15%, transparent)' : 'transparent',
+                border: 'none',
+                color: active ? 'var(--blaze)' : 'var(--bone-dim)',
               }}
             >
-              {it.label.toUpperCase()}
-            </div>
-          </div>
-        ))}
+              <Icon name={it.icon} size={22} color={active ? 'var(--blaze)' : 'var(--bone-dim)'} />
+              <div
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9,
+                  letterSpacing: '0.08em',
+                  color: active ? 'var(--blaze)' : 'var(--moss)',
+                }}
+              >
+                {it.label.toUpperCase()}
+              </div>
+            </button>
+          );
+        })}
         <div style={{ flex: 1 }} />
         <div
           style={{
@@ -471,7 +494,7 @@ export function TabletNetworkScreen() {
               marginTop: 4,
             }}
           >
-            Hayfork Loop
+            {selected?.name ?? '—'}
           </div>
           <div
             style={{
@@ -482,7 +505,29 @@ export function TabletNetworkScreen() {
               marginTop: 4,
             }}
           >
-            Leg 2 · Main climb to N. Ridge junction
+            {selected ? `${selected.status.toUpperCase()} · ${selected.km} km · ${selected.gain} m` : ''}
+          </div>
+          {/* Route picker — pick any library route */}
+          <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {routes.slice(0, 6).map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => setSelectedId(r.id)}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 100,
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 9,
+                  letterSpacing: '0.06em',
+                  background: r.id === selected?.id ? 'var(--blaze)' : 'var(--surface-2)',
+                  color: r.id === selected?.id ? '#1A1208' : 'var(--bone-dim)',
+                  border: '1px solid var(--line-soft)',
+                }}
+              >
+                {r.name.toUpperCase()}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -497,7 +542,7 @@ export function TabletNetworkScreen() {
             borderBottom: '1px solid var(--line-soft)',
           }}
         >
-          {STATS.map(([l, v, c]) => (
+          {stats.map(([l, v, c]) => (
             <div key={l} style={{ padding: '10px 6px', background: 'var(--surface)' }}>
               <div className="stat-label">{l}</div>
               <div
@@ -520,9 +565,9 @@ export function TabletNetworkScreen() {
           <div className="eyebrow" style={{ marginBottom: 8 }}>ELEVATION · CROSS-SECTION</div>
           <div style={{ height: 70 }}>
             <ElevChart
-              data={[420, 438, 458, 478, 498, 520, 545, 572, 600, 625, 640, 648]}
+              data={selected?.spark ?? [420]}
               height={70}
-              mark={8}
+              mark={Math.floor((selected?.spark.length ?? 1) / 2)}
             />
           </div>
         </div>
@@ -589,16 +634,36 @@ export function TabletNetworkScreen() {
             marginTop: 'auto',
           }}
         >
-          <div className="btn btn-primary" style={{ width: '100%' }}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ width: '100%' }}
+            onClick={() => navigate('/optimizer')}
+          >
             <Icon name="mountain" size={16} /> Optimize
-          </div>
+          </button>
           <div style={{ display: 'flex', gap: 8 }}>
-            <div className="btn btn-ghost" style={{ flex: 1 }}>
-              <Icon name="record" size={16} /> Record
-            </div>
-            <div className="btn btn-ghost" style={{ flex: 1 }}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ flex: 1 }}
+              onClick={() => selected && navigate(`/record?follow=${encodeURIComponent(selected.id)}`)}
+            >
+              <Icon name="record" size={16} /> Follow
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ flex: 1 }}
+              onClick={async () => {
+                if (!selected) return;
+                const { downloadString, serializeRoutesToGeoJson } = await import('../utils/geojson');
+                const fname = `${selected.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.geojson`;
+                downloadString(fname, 'application/geo+json', serializeRoutesToGeoJson([selected]));
+              }}
+            >
               <Icon name="download" size={16} /> Export
-            </div>
+            </button>
           </div>
         </div>
       </div>

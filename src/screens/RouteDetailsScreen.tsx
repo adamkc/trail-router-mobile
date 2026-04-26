@@ -8,6 +8,7 @@ import { SlopeRibbon } from '../components/SlopeRibbon';
 import { DataRow } from '../components/DataRow';
 import { useLibrary, type LibraryRoute } from '../store/library';
 import type { ChipTone } from '../components/Chip';
+import { downloadString, serializeRoutesToGeoJson } from '../utils/geojson';
 
 interface StatEntry {
   l: string;
@@ -252,13 +253,29 @@ export function RouteDetailsScreen() {
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-          <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => navigate(`/map/${route.id}`)}>
-            Follow route
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ flex: 1 }}
+            onClick={() => navigate(`/record?follow=${encodeURIComponent(route.id)}`)}
+          >
+            <Icon name="route" size={16} /> Follow & record
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => navigate(`/map/${route.id}`)} aria-label="Open on map">
+            <Icon name="pin" size={16} />
           </button>
           <button type="button" className="btn btn-ghost" onClick={() => navigate(`/editor/${route.id}`)} aria-label="Edit vertices">
             <Icon name="edit" size={16} />
           </button>
-          <button type="button" className="btn btn-ghost" onClick={() => navigate('/optimizer')} aria-label="Optimize">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              const fname = `${route.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.geojson`;
+              downloadString(fname, 'application/geo+json', serializeRoutesToGeoJson([route]));
+            }}
+            aria-label="Export GeoJSON"
+          >
             <Icon name="download" size={16} />
           </button>
         </div>

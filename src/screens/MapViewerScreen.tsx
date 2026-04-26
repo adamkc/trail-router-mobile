@@ -8,9 +8,10 @@ import { MapGeoLine } from '../components/MapGeoLine';
 import { MapPin, MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers';
 import { MapToolStack } from '../components/MapToolStack';
 import { ElevChart } from '../components/ElevChart';
-import { resolveCssVar, HAYFORK } from '../utils/geo';
+import { resolveCssVar } from '../utils/geo';
 import { routeChartData } from '../utils/elevation';
 import { useLibrary } from '../store/library';
+import { useActiveProject } from '../store/projects';
 import type { ChipTone } from '../components/Chip';
 
 const tagToCssColor = (tag: ChipTone | null): string =>
@@ -31,6 +32,7 @@ export function MapViewerScreen() {
     () => (id ? routes.find((r) => r.id === id) : null) ?? routes[0],
     [id, routes],
   );
+  const activeProject = useActiveProject();
 
   if (!route) {
     return <div className="screen"><StatusBar /><NavPill /></div>;
@@ -40,13 +42,22 @@ export function MapViewerScreen() {
   const start = trailGeo[0];
   const end = trailGeo[trailGeo.length - 1];
   const accent = tagToCssColor(route.tag);
+  // Anchor camera + hillshade to whichever project owns this route. Falls
+  // back to the active project's center if a route somehow lacks geo.
+  const cameraCenter = trailGeo[0] ?? activeProject.center;
+  // Only render hillshade if the route's project (or the active one as
+  // fallback) actually has a hillshade overlay bundled.
+  const owningProjectId = route.projectId;
+  const hillshade = activeProject.id === owningProjectId
+    ? activeProject.hasHillshade
+    : owningProjectId === 'hayfork';
 
   return (
     <div className="screen">
       <StatusBar />
 
       <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
-        <MapCanvas center={HAYFORK} zoom={14}>
+        <MapCanvas center={cameraCenter} zoom={14} hillshade={hillshade}>
           <FitBoundsToCoords coords={trailGeo} padding={48} />
           <MapGeoLine id={`map-${route.id}`} coords={trailGeo} color={accent} width={4} onTop />
           <MapPin coord={start} background={resolveCssVar('var(--good)')}   size={16} />

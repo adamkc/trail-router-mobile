@@ -25,7 +25,22 @@ export function SettingsScreen() {
   const replaceLibrary = useLibrary((s) => s.replaceLibrary);
   const activeProject = useActiveProject();
   const projects = useProjects((s) => s.projects);
+  const removeProject = useProjects((s) => s.removeProject);
+  const setActive = useProjects((s) => s.setActive);
   const projectRoutes = routes.filter((r) => r.projectId === activeProject.id);
+
+  const canDeleteActive = activeProject.id !== 'hayfork';
+  const handleDeleteActiveProject = () => {
+    if (!canDeleteActive) return;
+    if (!confirm(
+      `Delete project "${activeProject.name}"? Its ${projectRoutes.length} route${projectRoutes.length === 1 ? '' : 's'} will also be removed.`,
+    )) return;
+    // Drop the routes first so the library doesn't briefly orphan them.
+    const remaining = routes.filter((r) => r.projectId !== activeProject.id);
+    replaceLibrary(remaining);
+    removeProject(activeProject.id);
+    setActive('hayfork');
+  };
   const status = useRecording((s) => s.status);
   const hillshadeOn = usePreferences((s) => s.hillshadeOn);
   const setHillshade = usePreferences((s) => s.setHillshade);
@@ -220,6 +235,16 @@ export function SettingsScreen() {
             sub="Replace the library with fresh trails from the bundled GeoJSON"
             onClick={handleReloadHayfork}
           />
+          {canDeleteActive && (
+            <>
+              <Divider />
+              <DangerRow
+                label={`Delete project "${activeProject.name}"`}
+                sub={`Removes ${projectRoutes.length} route${projectRoutes.length === 1 ? '' : 's'} and switches to Hayfork`}
+                onClick={handleDeleteActiveProject}
+              />
+            </>
+          )}
         </Card>
 
         {/* Section: Data */}

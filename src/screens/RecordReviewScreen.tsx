@@ -9,22 +9,22 @@ import { MapPin, MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers
 import { ElevChart } from '../components/ElevChart';
 import { useRecording, draftSaveStatusToRoute, type SaveStatus } from '../store/recording';
 import { useLibrary } from '../store/library';
+import { useActiveProject } from '../store/projects';
 import { resolveCssVar } from '../utils/geo';
 import { elevationGain, fetchElevations, resampleSpark } from '../utils/elevation';
 
-const HAYFORK: [number, number] = [-122.5208, 40.7289];
-
-/** Synthetic geographic track around Hayfork — used when /review is opened without a recording. */
-const FALLBACK_GEO_TRACK: Array<[number, number]> = (() => {
+/** Synthetic geographic track around the project center — used when /review
+ *  is opened without a recording (typically only in dev / direct nav). */
+function buildFallbackTrack(center: [number, number]): Array<[number, number]> {
   const pts: Array<[number, number]> = [];
   for (let i = 0; i < 12; i++) {
     pts.push([
-      HAYFORK[0] + i * 0.0006 + Math.sin(i / 3) * 0.0003,
-      HAYFORK[1] + i * 0.0004 + Math.cos(i / 3) * 0.0002,
+      center[0] + i * 0.0006 + Math.sin(i / 3) * 0.0003,
+      center[1] + i * 0.0004 + Math.cos(i / 3) * 0.0002,
     ]);
   }
   return pts;
-})();
+}
 
 const SAVE_PILLS: Array<{ key: SaveStatus; label: string }> = [
   { key: 'draft',  label: 'DRAFT'  },
@@ -58,10 +58,12 @@ export function RecordReviewScreen() {
   const setDraftSaveStatus = useRecording((s) => s.setDraftSaveStatus);
   const discard            = useRecording((s) => s.discard);
   const addRoute           = useLibrary((s) => s.addRoute);
+  const activeProject      = useActiveProject();
 
   // If the user landed here without a recording (e.g. via the canvas), use a synthetic track for fidelity.
   const hasTrack = geoTrack.length >= 3;
-  const displayTrack = hasTrack ? geoTrack : FALLBACK_GEO_TRACK;
+  const fallbackTrack = useMemo(() => buildFallbackTrack(activeProject.center), [activeProject.center]);
+  const displayTrack = hasTrack ? geoTrack : fallbackTrack;
   const displayElapsed = elapsed > 0 ? elapsed : 32 * 60 + 18;
   const displayDistance = distance > 0 ? distance : 2.14;
   const displayGain = gain > 0 ? gain : 220;
@@ -175,7 +177,12 @@ export function RecordReviewScreen() {
           border: '1px solid var(--line-soft)',
         }}
       >
-        <MapCanvas center={displayTrack[0] ?? HAYFORK} zoom={15} interactive={false}>
+        <MapCanvas
+          center={displayTrack[0] ?? activeProject.center}
+          zoom={15}
+          interactive={false}
+          hillshade={activeProject.hasHillshade}
+        >
           <FitBoundsToCoords coords={displayTrack} padding={28} />
           {headSlice.length >= 2 && <MapGeoLine id="rev-head" coords={headSlice} color="#8E9483" width={3} dashed />}
           {mainSlice.length >= 2 && <MapGeoLine id="rev-main" coords={mainSlice} color="#E88A3C" width={3.5} onTop />}

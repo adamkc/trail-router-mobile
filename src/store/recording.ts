@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { RouteStatus } from './library';
+import { useProjects } from './projects';
 
 export type RecordingStatus = 'idle' | 'recording' | 'paused' | 'reviewing';
 export type SaveStatus = 'draft' | 'built' | 'survey';
@@ -68,7 +69,14 @@ interface RecordingState {
   loadPlotted: (coords: Array<[number, number]>, suggestedName?: string) => void;
 }
 
-const HAYFORK: [number, number] = [-122.5208, 40.7289];
+/** Fallback coord for a waypoint captured before the GPS has produced any
+ *  fix — uses the currently-active project's center rather than a stale
+ *  hardcoded value. Looked up at call time so a project switch updates it. */
+function fallbackCoord(): [number, number] {
+  return useProjects.getState().projects.find(
+    (p) => p.id === useProjects.getState().activeProjectId,
+  )?.center ?? [-123.0809, 40.7137];
+}
 
 
 const formatT = (elapsed: number): string => {
@@ -159,7 +167,7 @@ export const useRecording = create<RecordingState>((set) => ({
   addWaypointOfType: (kind, label, photoId) =>
     set((s) => {
       const template = WAYPOINT_TYPES.find((t) => t.kind === kind) ?? WAYPOINT_TYPES[0];
-      const at: [number, number] = s.geoTrack[s.geoTrack.length - 1] ?? HAYFORK;
+      const at: [number, number] = s.geoTrack[s.geoTrack.length - 1] ?? fallbackCoord();
       const next: CapturedWaypoint = {
         id: `wp-${s.capturedWaypoints.length + 1}`,
         type: template.kind,

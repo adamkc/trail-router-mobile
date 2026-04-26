@@ -7,8 +7,9 @@ import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
 import { MapPin, FitBoundsToCoords } from '../components/MapMarkers';
 import { ElevChart } from '../components/ElevChart';
-import { resolveCssVar, HAYFORK } from '../utils/geo';
+import { resolveCssVar } from '../utils/geo';
 import { useLibrary } from '../store/library';
+import { useActiveProject } from '../store/projects';
 import { haversineKm } from '../store/recording';
 
 const MAX_ITERATIONS = 80;
@@ -46,6 +47,7 @@ export function OptimizerScreen() {
   const { id } = useParams<{ id?: string }>();
   const routes = useLibrary((s) => s.routes);
   const addRoute = useLibrary((s) => s.addRoute);
+  const activeProject = useActiveProject();
 
   const route = useMemo(
     () => (id ? routes.find((r) => r.id === id) : null) ?? routes[0],
@@ -168,7 +170,12 @@ export function OptimizerScreen() {
           border: '1px solid var(--line-soft)',
         }}
       >
-        <MapCanvas center={HAYFORK} zoom={15} interactive={false}>
+        <MapCanvas
+          center={beforeGeo[0] ?? activeProject.center}
+          zoom={15}
+          interactive={false}
+          hillshade={activeProject.hasHillshade}
+        >
           <FitBoundsToCoords coords={[...beforeGeo, ...afterGeo]} padding={36} />
           <MapGeoLine id="opt-before" coords={beforeGeo} color={resolveCssVar('var(--moss)')} width={2.5} dashed glow={false} />
           <MapGeoLine id="opt-after"  coords={afterGeo}  color={resolveCssVar('var(--blaze)')} width={3.5} onTop />

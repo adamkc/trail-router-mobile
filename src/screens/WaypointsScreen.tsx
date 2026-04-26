@@ -7,7 +7,8 @@ import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
 import { MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers';
 import { WaypointPhoto } from '../components/WaypointPhoto';
-import { resolveCssVar, HAYFORK } from '../utils/geo';
+import { resolveCssVar } from '../utils/geo';
+import { useActiveProject } from '../store/projects';
 import { useLibrary } from '../store/library';
 import { haversineKm } from '../store/recording';
 
@@ -24,6 +25,7 @@ export function WaypointsScreen() {
   );
 
   const [filter, setFilter] = useState<WaypointFilter>('ALL');
+  const activeProject = useActiveProject();
 
   if (!route) {
     return <div className="screen"><StatusBar /><NavPill /></div>;
@@ -116,7 +118,12 @@ export function WaypointsScreen() {
           border: '1px solid var(--line-soft)',
         }}
       >
-        <MapCanvas center={route.geo[0] ?? HAYFORK} zoom={14} interactive={false}>
+        <MapCanvas
+          center={route.geo[0] ?? activeProject.center}
+          zoom={14}
+          interactive={false}
+          hillshade={route.projectId === 'hayfork'}
+        >
           <FitBoundsToCoords coords={route.geo} padding={36} />
           <MapGeoLine id={`wp-${route.id}-trail`} coords={route.geo} color={resolveCssVar('var(--blaze)')} width={2.5} onTop />
           {visibleMapPins.map((w) => (

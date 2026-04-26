@@ -7,12 +7,12 @@ import { Icon } from '../components/Icon';
 import { MapCanvas, useMapInstance } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
 import { CompassBadge } from '../components/CompassBadge';
+import { MapToolStack } from '../components/MapToolStack';
 import { ElevChart } from '../components/ElevChart';
 import { useRecording, haversineKm, WAYPOINT_TYPES, type GpsState, type WaypointKind } from '../store/recording';
 import { useLibrary } from '../store/library';
+import { useActiveProject } from '../store/projects';
 import { newPhotoId, pickCameraPhoto, savePhoto } from '../utils/photoStore';
-
-const HAYFORK: [number, number] = [-122.5208, 40.7289];
 
 export function RecordScreen() {
   const navigate = useNavigate();
@@ -21,6 +21,8 @@ export function RecordScreen() {
   const followRoute = useLibrary((s) =>
     followId ? s.routes.find((r) => r.id === followId) ?? null : null,
   );
+  const activeProject = useActiveProject();
+  const projectCenter = activeProject.center;
 
   const status       = useRecording((s) => s.status);
   const elapsed      = useRecording((s) => s.elapsed);
@@ -64,13 +66,14 @@ export function RecordScreen() {
 
     const startSim = () => {
       setGpsState('simulated');
-      // Walk roughly NE from Hayfork at ~3 m every 2s.
+      // Walk roughly NE from the active project's center at ~3 m every 2s.
+      const [originLng, originLat] = projectCenter;
       let i = 0;
       simInterval = window.setInterval(() => {
         i += 1;
         const drift = i * 0.00003;
         const wobble = Math.sin(i / 4) * 0.00002;
-        pushFix(HAYFORK[0] + drift, HAYFORK[1] + drift * 0.6 + wobble, 420 + i * 0.6);
+        pushFix(originLng + drift, originLat + drift * 0.6 + wobble, 420 + i * 0.6);
       }, 2000);
     };
 
@@ -96,7 +99,7 @@ export function RecordScreen() {
       if (watchId != null) navigator.geolocation.clearWatch(watchId);
       if (simInterval != null) clearInterval(simInterval);
     };
-  }, [status, pushFix, setGpsState]);
+  }, [status, pushFix, setGpsState, projectCenter]);
 
   const hrs = Math.floor(elapsed / 3600);
   const mm = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
@@ -137,7 +140,11 @@ export function RecordScreen() {
 
       {/* Map layer */}
       <div style={{ position: 'absolute', inset: 0 }}>
-        <MapCanvas center={followRoute?.geo[0] ?? geoTrack[geoTrack.length - 1] ?? HAYFORK} zoom={16}>
+        <MapCanvas
+          center={followRoute?.geo[0] ?? geoTrack[geoTrack.length - 1] ?? projectCenter}
+          zoom={16}
+          hillshade={activeProject.hasHillshade}
+        >
           {/* Target trail (if following) — faint dashed underlay */}
           {followRoute && followRoute.geo.length >= 2 && (
             <MapGeoLine
@@ -153,6 +160,7 @@ export function RecordScreen() {
           <FollowUserCamera coord={geoTrack[geoTrack.length - 1] ?? null} active={status === 'recording'} />
           <MapDot coord={geoTrack[0] ?? null} color="oklch(0.74 0.14 145)" outerColor="#12160F" size={14} />
           <MapCursor coord={geoTrack[geoTrack.length - 1] ?? null} pulse={status === 'recording'} />
+          <MapToolStack top={140} />
         </MapCanvas>
       </div>
 

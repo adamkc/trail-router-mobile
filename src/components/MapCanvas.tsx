@@ -73,6 +73,10 @@ export function MapCanvas({
         zoom: initial.current.zoom,
         attributionControl: false,
         interactive: initial.current.interactive,
+        // Lets the WebGL canvas be read back via toDataURL/getImageData
+        // (used by screenshot tooling and any future export-to-image flow).
+        // Tiny perf hit on mobile but worth it for the debugging utility.
+        preserveDrawingBuffer: true,
       });
       // Set state so children rerender with the live map ref.
       setMap(m);

@@ -7,7 +7,8 @@ import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
 import { MapPin, MapActiveVertex, MapDraggableVertex, MapClickHandler, FitBoundsToCoords } from '../components/MapMarkers';
 import { SlopeRibbon } from '../components/SlopeRibbon';
-import { resolveCssVar, HAYFORK } from '../utils/geo';
+import { resolveCssVar } from '../utils/geo';
+import { useActiveProject } from '../store/projects';
 import { useLibrary } from '../store/library';
 import { haversineKm } from '../store/recording';
 
@@ -62,6 +63,7 @@ export function VertexEditorScreen() {
 
   const blaze = resolveCssVar('var(--blaze)');
   const topo = resolveCssVar('var(--topo)');
+  const activeProject = useActiveProject();
 
   const handleToolClick = (tool: EditorTool) => {
     if (tool === 'OPTIMIZE') {
@@ -158,7 +160,7 @@ export function VertexEditorScreen() {
 
       {/* Map */}
       <div style={{ position: 'absolute', inset: 0 }}>
-        <MapCanvas center={HAYFORK} zoom={15}>
+        <MapCanvas center={originalGeo[0] ?? activeProject.center} zoom={15} hillshade={activeProject.hasHillshade}>
           <FitBoundsToCoords coords={originalGeo} padding={48} />
           {activeTool === 'ADD' && <MapClickHandler onTap={onMapTap} />}
           <MapGeoLine id="edit-trail" coords={coords} color={blaze} width={3} onTop />

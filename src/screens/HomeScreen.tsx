@@ -5,6 +5,7 @@ import { Icon } from '../components/Icon';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { useRecording } from '../store/recording';
 import { useLibrary } from '../store/library';
+import { useActiveProject } from '../store/projects';
 import type { ChipTone } from '../components/Chip';
 
 type RecentTag = ChipTone | null;
@@ -23,7 +24,11 @@ const formatElapsed = (seconds: number): string => {
 
 export function HomeScreen() {
   const navigate = useNavigate();
-  const routes = useLibrary((s) => s.routes);
+  const allRoutes = useLibrary((s) => s.routes);
+  const activeProject = useActiveProject();
+  // Recents are scoped to the active project so the Home shelf reflects the
+  // user's current context — switching projects swaps what's shown.
+  const routes = allRoutes.filter((r) => r.projectId === activeProject.id);
   const recents = routes.slice(0, 4);
   const recordingStatus = useRecording((s) => s.status);
   const elapsed = useRecording((s) => s.elapsed);
@@ -105,7 +110,7 @@ export function HomeScreen() {
           color: 'var(--moss)',
         }}
       >
-        <span>◉ PROJECT · HAYFORK</span>
+        <span>◉ PROJECT · {activeProject.name.toUpperCase()}</span>
         <span>
           GPS <span style={{ color: 'var(--good)' }}>FIX 3.1M</span>
         </span>

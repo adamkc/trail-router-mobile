@@ -6,14 +6,20 @@ import { Icon } from '../components/Icon';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { useLibrary } from '../store/library';
 import { useRecording } from '../store/recording';
+import { usePreferences } from '../store/preferences';
 import { downloadString, parseGeoJsonRoutes, pickJsonFile, serializeRoutesToGeoJson } from '../utils/geojson';
 import { serializeRoutesToGpx } from '../utils/gpx';
+import { loadHayforkProject } from '../utils/hayforkData';
 
 export function SettingsScreen() {
   const navigate = useNavigate();
   const routes = useLibrary((s) => s.routes);
   const addRoute = useLibrary((s) => s.addRoute);
+  const replaceLibrary = useLibrary((s) => s.replaceLibrary);
   const status = useRecording((s) => s.status);
+  const hillshadeOn = usePreferences((s) => s.hillshadeOn);
+  const setHillshade = usePreferences((s) => s.setHillshade);
+  const markHayforkImported = usePreferences((s) => s.markHayforkImported);
   const [units, setUnits] = useState<'km' | 'mi'>('km');
   const [wifiOnly, setWifiOnly] = useState(true);
   const [haptics, setHaptics] = useState(true);
@@ -40,6 +46,22 @@ export function SettingsScreen() {
       setImportStatus(`Imported ${parsed.length} route${parsed.length === 1 ? '' : 's'} from ${file.name}`);
     } catch (e) {
       setImportStatus(`Import failed: ${(e as Error).message}`);
+    }
+  };
+
+  const handleReloadHayfork = async () => {
+    setImportStatus(null);
+    try {
+      const fresh = await loadHayforkProject();
+      if (fresh.length === 0) {
+        setImportStatus('Hayfork data has no usable trails');
+        return;
+      }
+      replaceLibrary(fresh);
+      markHayforkImported();
+      setImportStatus(`Reloaded ${fresh.length} routes from Hayfork project`);
+    } catch (e) {
+      setImportStatus(`Reload failed: ${(e as Error).message}`);
     }
   };
 
@@ -103,6 +125,13 @@ export function SettingsScreen() {
             onToggle={() => setHaptics((v) => !v)}
           />
           <Divider />
+          <ToggleRow
+            label="Show hillshade"
+            sub="Pre-rendered SRTM relief overlay on the Hayfork project area"
+            on={hillshadeOn}
+            onToggle={() => setHillshade(!hillshadeOn)}
+          />
+          <Divider />
           <SegmentRow
             label="Units"
             options={[
@@ -134,9 +163,15 @@ export function SettingsScreen() {
         {/* Section: Account */}
         <SectionLabel>PROJECT</SectionLabel>
         <Card>
-          <NavRow label="Hayfork" sub="Trinity County · 12 trails · 42.8 km" onClick={() => navigate('/projects')} />
+          <NavRow label="Hayfork" sub={`Trinity County · ${routes.length} routes`} onClick={() => navigate('/projects')} />
           <Divider />
           <NavRow label="Saved routes" sub={`${routes.length} in library`} onClick={() => navigate('/library')} />
+          <Divider />
+          <NavRow
+            label="Reload Hayfork data"
+            sub="Replace the library with fresh trails from the bundled GeoJSON"
+            onClick={handleReloadHayfork}
+          />
         </Card>
 
         {/* Section: Data */}

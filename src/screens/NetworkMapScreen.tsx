@@ -202,6 +202,13 @@ export function NetworkMapScreen() {
     return LEGEND_LAYERS.map((l) => ({ ...l, n: counts[l.key] }));
   }, [libraryRoutes]);
 
+  // "N TRAILS · X.X KM" header summary — derived from the live library.
+  const projectSummary = useMemo(() => {
+    let kmSum = 0;
+    for (const r of libraryRoutes) kmSum += parseFloat(r.km) || 0;
+    return `${libraryRoutes.length} TRAILS · ${kmSum.toFixed(1)} KM`;
+  }, [libraryRoutes]);
+
   const fitCoords = allLibraryCoords.length >= 2
     ? allLibraryCoords
     : svgArrayToGeo(NETWORK[0].pts); // fallback so the map still has bounds
@@ -298,7 +305,7 @@ export function NetworkMapScreen() {
                     letterSpacing: '0.08em',
                   }}
                 >
-                  12 TRAILS · 42.8 KM
+                  {projectSummary}
                 </div>
               </div>
             </div>

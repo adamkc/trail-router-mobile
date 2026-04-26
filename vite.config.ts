@@ -43,9 +43,11 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Cache app shell + map tiles + Google fonts for decent offline behavior.
-        globPatterns: ['**/*.{js,css,html,svg,woff2}'],
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        // Cache app shell + bundled project data + map tiles + Google fonts.
+        // The Hayfork hillshade PNG is ~8 MB so include png in the precache glob
+        // and bump the per-file ceiling above its size.
+        globPatterns: ['**/*.{js,css,html,svg,woff2,png,geojson,json}'],
+        maximumFileSizeToCacheInBytes: 16 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
@@ -69,6 +71,17 @@ export default defineConfig({
             options: {
               cacheName: 'carto-tiles',
               expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
+          {
+            // Bundled Hayfork project files (`/data/*`) — same-origin, served by
+            // Vite or the Pages host. Cache-first so the app keeps working
+            // offline once the user has launched it on the network at least once.
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.includes('/data/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'hayfork-data',
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 90 },
             },
           },
         ],

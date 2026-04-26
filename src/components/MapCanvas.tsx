@@ -1,19 +1,22 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import maplibregl, { type Map as MlMap } from 'maplibre-gl';
 import { TopoMap } from './TopoMap';
+import { MapHillshade } from './MapHillshade';
+import { HAYFORK } from '../utils/geo';
+import { usePreferences } from '../store/preferences';
 
 export interface MapCanvasProps {
   children?: ReactNode;
-  /** [lng, lat] — default is the Hayfork, CA area from the handoff copy. */
+  /** [lng, lat] — defaults to the bundled Hayfork project center. */
   center?: [number, number];
   zoom?: number;
   variant?: 'default' | 'satellite';
   /** Preserved from TopoMap's API — MapLibre is north-always-up here, kept for prop compat. */
   pitch?: number;
   interactive?: boolean;
+  /** Render the bundled Hayfork hillshade overlay. Honors the user's preference toggle. */
+  hillshade?: boolean;
 }
-
-const HAYFORK: [number, number] = [-122.5208, 40.7289];
 
 /**
  * Carto's hosted "Dark Matter" vector style — free, no API key, under OSM/ODbL.
@@ -48,11 +51,13 @@ export function MapCanvas({
   zoom = 13,
   variant = 'default',
   interactive = true,
+  hillshade = true,
 }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<MlMap | null>(null);
   const [styleLoaded, setStyleLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const hillshadeOn = usePreferences((s) => s.hillshadeOn);
 
   // Freeze initial params so the effect has stable [] deps and never re-initializes the map.
   const initial = useRef({ center, zoom, interactive });
@@ -110,6 +115,7 @@ export function MapCanvas({
         }}
       />
       <MapInstanceContext.Provider value={{ map, styleLoaded }}>
+        {hillshade && <MapHillshade enabled={hillshadeOn} />}
         {children}
       </MapInstanceContext.Provider>
     </div>

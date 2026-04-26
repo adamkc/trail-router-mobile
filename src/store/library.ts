@@ -78,6 +78,8 @@ interface LibraryState {
   renameRoute: (id: string, name: string) => void;
   /** Remove a route. */
   removeRoute: (id: string) => void;
+  /** Replace the entire route list (used when importing the Hayfork project). */
+  replaceLibrary: (routes: LibraryRoute[]) => void;
 }
 
 /** Stable hash → seeded PRNG so each named route always gets the same shape. */
@@ -144,6 +146,9 @@ export const useLibrary = create<LibraryState>()(
       },
       removeRoute: (id) => {
         set((s) => ({ routes: s.routes.filter((r) => r.id !== id) }));
+      },
+      replaceLibrary: (routes) => {
+        set({ routes });
       },
     }),
     {

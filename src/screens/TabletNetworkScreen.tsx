@@ -72,6 +72,18 @@ export function TabletNetworkScreen() {
   );
 
   const stats = selected ? statsForRoute(selected) : [];
+
+  // "N TRAILS · X.X KM · …BUILT/DRAFT/OPT" header — derived from the live library.
+  const projectSummary = useMemo(() => {
+    let kmSum = 0, built = 0, draft = 0, opt = 0;
+    for (const r of routes) {
+      kmSum += parseFloat(r.km) || 0;
+      if (r.status === 'built') built += 1;
+      else if (r.status === 'draft') draft += 1;
+      else if (r.status === 'optimized') opt += 1;
+    }
+    return `${routes.length} TRAILS · ${kmSum.toFixed(1)} KM · ${built} BUILT · ${draft} DRAFT · ${opt} OPT`;
+  }, [routes]);
   return (
     <div
       style={{
@@ -206,7 +218,7 @@ export function TabletNetworkScreen() {
               letterSpacing: '0.08em',
             }}
           >
-            12 TRAILS · 42.8 KM · 7 BUILT · 3 DRAFT · 2 OPT
+            {projectSummary}
           </div>
 
           <div style={{ flex: 1 }} />

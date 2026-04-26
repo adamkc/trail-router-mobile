@@ -11,7 +11,17 @@
 const SVG_VIEWBOX_W = 412;
 const SVG_VIEWBOX_H = 600;
 
-export const HAYFORK: [number, number] = [-122.5208, 40.7289];
+/** Real Hayfork project center — middle of the data bundle's hillshade bounds.
+ *  (Earlier code used a stub coordinate; this is the actual Hayfork CA project area.) */
+export const HAYFORK: [number, number] = [-123.0809, 40.7137];
+
+/** Geographic bounds of the bundled hillshade tile. Matches public/data/hayfork-hillshade-bounds.json. */
+export const HAYFORK_BOUNDS = {
+  west: -123.1155,
+  east: -123.0462,
+  south: 40.6953,
+  north: 40.732,
+} as const;
 
 export interface SvgToGeoOpts {
   /** [lng, lat] the SVG center maps to. */

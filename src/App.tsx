@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { HashRouter, Link, Route, Routes } from 'react-router-dom';
 import { DesignCanvas } from './components/DesignCanvas';
 import { AndroidDevice } from './components/AndroidDevice';
@@ -8,6 +9,60 @@ import { VertexEditorScreen } from './screens/VertexEditorScreen';
 import { WaypointsScreen } from './screens/WaypointsScreen';
 import { OptimizerScreen } from './screens/OptimizerScreen';
 import { useIsMobile } from './hooks/useIsMobile';
+import { useLibrary } from './store/library';
+import { usePreferences } from './store/preferences';
+import { loadHayforkProject } from './utils/hayforkData';
+
+/** IDs of the procedural seed routes baked into the library store. The
+ *  auto-import only fires when the user's library is still exactly these. */
+const SEED_IDS = new Set([
+  'hayfork-loop',
+  'north-ridge-traverse',
+  'clear-creek-connector',
+  'manzanita-switchbacks',
+  'meadow-cutoff',
+]);
+
+/**
+ * On first launch (no `hayforkImportedAt` stamp AND library is still in seed
+ * state), pull the bundled Hayfork project's real trails and replace the
+ * procedural seed routes. Runs once, silently — failures fall through.
+ *
+ * Guard rationale: a returning user who already recorded or imported routes
+ * will have IDs outside SEED_IDS, so we skip and never clobber their work.
+ */
+function useHayforkAutoImport() {
+  const importedAt = usePreferences((s) => s.hayforkImportedAt);
+  const markImported = usePreferences((s) => s.markHayforkImported);
+  useEffect(() => {
+    if (importedAt) return;
+    const current = useLibrary.getState().routes;
+    const isSeedState =
+      current.length > 0 && current.every((r) => SEED_IDS.has(r.id));
+    if (!isSeedState) {
+      // User has touched the library — respect it, just stamp so we don't keep
+      // checking on every launch.
+      markImported();
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const routes = await loadHayforkProject();
+        if (cancelled || routes.length === 0) return;
+        useLibrary.getState().replaceLibrary(routes);
+        markImported();
+      } catch (e) {
+        // Network unavailable on first launch (offline) — leave seeds in place
+        // and try again next launch.
+        console.warn('Hayfork auto-import failed:', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [importedAt, markImported]);
+}
 
 function ScreenFrame({ entry }: { entry: (typeof SCREENS)[number] }) {
   const { label, width, height, Component } = entry;
@@ -116,6 +171,7 @@ function NotFound() {
 }
 
 export default function App() {
+  useHayforkAutoImport();
   return (
     <HashRouter>
       <Routes>

@@ -6,6 +6,7 @@ import { NavPill } from '../components/NavPill';
 import { Icon } from '../components/Icon';
 import { MapCanvas, useMapInstance } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
+import { CompassBadge } from '../components/CompassBadge';
 import { ElevChart } from '../components/ElevChart';
 import { useRecording, haversineKm, WAYPOINT_TYPES, type GpsState, type WaypointKind } from '../store/recording';
 import { useLibrary } from '../store/library';
@@ -152,6 +153,12 @@ export function RecordScreen() {
           <MapDot coord={geoTrack[0] ?? null} color="oklch(0.74 0.14 145)" outerColor="#12160F" size={14} />
           <MapCursor coord={geoTrack[geoTrack.length - 1] ?? null} pulse={status === 'recording'} />
         </MapCanvas>
+      </div>
+
+      {/* Compass — overlay on the map. Shows heading on Android automatically;
+          iOS users tap once to grant DeviceOrientation permission. */}
+      <div style={{ position: 'absolute', top: 80, right: 16, zIndex: 3 }}>
+        <CompassBadge />
       </div>
 
       {/* Top HUD — timer + back */}

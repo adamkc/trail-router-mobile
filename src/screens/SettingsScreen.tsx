@@ -7,8 +7,14 @@ import { BottomTabBar } from '../components/BottomTabBar';
 import { useLibrary } from '../store/library';
 import { useRecording } from '../store/recording';
 import { usePreferences } from '../store/preferences';
-import { downloadString, parseGeoJsonRoutes, pickJsonFile, serializeRoutesToGeoJson } from '../utils/geojson';
-import { serializeRoutesToGpx } from '../utils/gpx';
+import {
+  downloadString,
+  parseGeoJsonRoutes,
+  pickGpxFile,
+  pickJsonFile,
+  serializeRoutesToGeoJson,
+} from '../utils/geojson';
+import { parseGpxRoutes, serializeRoutesToGpx } from '../utils/gpx';
 import { backfillElevations, loadHayforkProject } from '../utils/hayforkData';
 
 export function SettingsScreen() {
@@ -46,6 +52,27 @@ export function SettingsScreen() {
       setImportStatus(`Imported ${parsed.length} route${parsed.length === 1 ? '' : 's'} from ${file.name}`);
     } catch (e) {
       setImportStatus(`Import failed: ${(e as Error).message}`);
+    }
+  };
+
+  const handleImportGpx = async () => {
+    setImportStatus(null);
+    try {
+      const file = await pickGpxFile();
+      if (!file) return;
+      const parsed = parseGpxRoutes(file.text);
+      if (parsed.length === 0) {
+        setImportStatus(`No <trk> elements found in ${file.name}`);
+        return;
+      }
+      for (const r of parsed) addRoute(r);
+      const wpCount = parsed.reduce((acc, r) => acc + r.waypoints.length, 0);
+      setImportStatus(
+        `Imported ${parsed.length} track${parsed.length === 1 ? '' : 's'} from ${file.name}` +
+          (wpCount ? ` · ${wpCount} waypoint${wpCount === 1 ? '' : 's'}` : ''),
+      );
+    } catch (e) {
+      setImportStatus(`GPX import failed: ${(e as Error).message}`);
     }
   };
 
@@ -192,6 +219,12 @@ export function SettingsScreen() {
             label="Import GeoJSON…"
             sub="Add LineString features from a .geojson file (Strava, OSM, QGIS export)"
             onClick={handleImport}
+          />
+          <Divider />
+          <NavRow
+            label="Import GPX…"
+            sub="Add tracks + waypoints from a .gpx file (Garmin, Komoot, Gaia, AllTrails)"
+            onClick={handleImportGpx}
           />
           <Divider />
           <NavRow

@@ -5,6 +5,7 @@ import { NavPill } from '../components/NavPill';
 import { Icon, type IconName } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
+import { MapToolStack } from '../components/MapToolStack';
 import {
   MapPin,
   MapJunction,
@@ -95,13 +96,6 @@ const LEGEND_LAYERS: Array<{ key: LayerKey; label: string; color: string; n: num
   { key: 'built',     label: 'Built',     color: 'var(--good)',  n: 7, solid: true  },
   { key: 'draft',     label: 'Draft',     color: 'var(--bone)',  n: 3, solid: false },
   { key: 'proposed',  label: 'Proposed',  color: 'var(--topo)',  n: 2, solid: false },
-];
-
-const MAP_TOOLS: Array<{ icon: IconName; active?: boolean }> = [
-  { icon: 'layers', active: true },
-  { icon: 'mountain' },
-  { icon: 'compass' },
-  { icon: 'target' },
 ];
 
 type SnapKey = 'JCT' | 'CNT' | 'GRD';
@@ -388,6 +382,7 @@ export function NetworkMapScreen() {
               return <MapPin coord={n.coord} background={resolveCssVar('var(--danger)')} size={16} />;
             })()
           )}
+          <MapToolStack top={76} />
         </MapCanvas>
 
         {/* Top project switcher */}
@@ -433,35 +428,7 @@ export function NetworkMapScreen() {
           </div>
         </div>
 
-        {/* Right map tools */}
-        <div
-          style={{
-            position: 'absolute',
-            right: 12,
-            top: 76,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-          }}
-        >
-          {MAP_TOOLS.map((b, i) => (
-            <div
-              key={i}
-              style={{
-                width: 42,
-                height: 42,
-                borderRadius: 12,
-                background: 'color-mix(in oklch, var(--surface) 90%, transparent)',
-                backdropFilter: 'blur(8px)',
-                border: '1px solid var(--line-soft)',
-                display: 'grid',
-                placeItems: 'center',
-              }}
-            >
-              <Icon name={b.icon} size={18} color={b.active ? 'var(--blaze)' : 'var(--bone)'} />
-            </div>
-          ))}
-        </div>
+        {/* Right map tools live inside <MapCanvas> via <MapToolStack /> for live state. */}
 
         {/* Left legend / layers panel */}
         <div

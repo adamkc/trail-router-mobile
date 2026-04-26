@@ -163,3 +163,8 @@ export function pickJsonFile(accept = '.geojson,.json,application/geo+json,appli
     setTimeout(() => document.body.removeChild(input), 1000);
   });
 }
+
+/** Pick a GPX file (separate accept filter so the OS picker only shows GPX). */
+export function pickGpxFile(): Promise<{ name: string; text: string } | null> {
+  return pickJsonFile('.gpx,application/gpx+xml,application/xml,text/xml');
+}

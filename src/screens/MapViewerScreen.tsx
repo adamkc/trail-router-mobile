@@ -2,22 +2,16 @@ import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
-import { Icon, type IconName } from '../components/Icon';
+import { Icon } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
 import { MapPin, MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers';
+import { MapToolStack } from '../components/MapToolStack';
 import { ElevChart } from '../components/ElevChart';
 import { resolveCssVar, HAYFORK } from '../utils/geo';
 import { routeChartData } from '../utils/elevation';
 import { useLibrary } from '../store/library';
 import type { ChipTone } from '../components/Chip';
-
-const CONTROLS: Array<{ icon: IconName; label: string }> = [
-  { icon: 'layers',   label: 'HILL' },
-  { icon: 'mountain', label: '3D'   },
-  { icon: 'compass',  label: 'N'    },
-  { icon: 'target',   label: 'LOC'  },
-];
 
 const tagToCssColor = (tag: ChipTone | null): string =>
   tag === 'blaze' ? resolveCssVar('var(--blaze)')
@@ -66,6 +60,7 @@ export function MapViewerScreen() {
               size={20}
             />
           ))}
+          <MapToolStack top={72} />
         </MapCanvas>
 
         {/* Floating top bar — back + trail name + coords */}
@@ -113,49 +108,6 @@ export function MapViewerScreen() {
             </button>
             <Icon name="share" size={18} color="var(--moss)" />
           </div>
-        </div>
-
-        {/* Right-side map tools */}
-        <div
-          style={{
-            position: 'absolute',
-            right: 12,
-            top: 72,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-          }}
-        >
-          {CONTROLS.map((b, i) => (
-            <div
-              key={b.label}
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 12,
-                background: 'color-mix(in oklch, var(--surface) 90%, transparent)',
-                backdropFilter: 'blur(8px)',
-                border: '1px solid var(--line-soft)',
-                display: 'grid',
-                placeItems: 'center',
-                position: 'relative',
-              }}
-            >
-              <Icon name={b.icon} size={18} color={i === 0 ? 'var(--blaze)' : 'var(--bone)'} />
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: 3,
-                  right: 4,
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: 8,
-                  color: 'var(--moss)',
-                }}
-              >
-                {b.label}
-              </div>
-            </div>
-          ))}
         </div>
 
         {/* Scale + zoom readout */}

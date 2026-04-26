@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon } from '../components/Icon';
@@ -7,25 +7,106 @@ import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
 import { MapPin, FitBoundsToCoords } from '../components/MapMarkers';
 import { ElevChart } from '../components/ElevChart';
-import { svgArrayToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
+import { resolveCssVar, HAYFORK } from '../utils/geo';
+import { useLibrary } from '../store/library';
+import { haversineKm } from '../store/recording';
 
-const BEFORE_SVG: Array<[number, number]> = [
-  [60, 500], [90, 460], [130, 420], [170, 370], [210, 310], [250, 260], [300, 210], [340, 170],
-];
+const MAX_ITERATIONS = 80;
 
-const AFTER_SVG: Array<[number, number]> = [
-  [60, 500], [95, 475], [135, 455], [115, 420], [155, 395], [200, 380], [180, 345],
-  [220, 320], [260, 300], [245, 265], [285, 245], [320, 220], [340, 170],
-];
+/**
+ * One pass of laplacian smoothing — replaces each non-endpoint vertex with a
+ * weighted average of itself + its neighbors. Repeated, this pulls a noisy
+ * trail toward a smoother curve while keeping the start + end pinned.
+ */
+function smoothOnce(coords: Array<[number, number]>): Array<[number, number]> {
+  if (coords.length < 3) return coords;
+  const out: Array<[number, number]> = [coords[0]];
+  for (let i = 1; i < coords.length - 1; i++) {
+    const a = coords[i - 1];
+    const c = coords[i];
+    const b = coords[i + 1];
+    out.push([
+      (a[0] + 2 * c[0] + b[0]) / 4,
+      (a[1] + 2 * c[1] + b[1]) / 4,
+    ]);
+  }
+  out.push(coords[coords.length - 1]);
+  return out;
+}
+
+/** Total path length in km. */
+function totalKm(coords: Array<[number, number]>): number {
+  let d = 0;
+  for (let i = 1; i < coords.length; i++) d += haversineKm(coords[i - 1], coords[i]);
+  return d;
+}
 
 export function OptimizerScreen() {
   const navigate = useNavigate();
-  const beforeGeo = useMemo(() => svgArrayToGeo(BEFORE_SVG), []);
-  const afterGeo  = useMemo(() => svgArrayToGeo(AFTER_SVG), []);
+  const { id } = useParams<{ id?: string }>();
+  const routes = useLibrary((s) => s.routes);
+  const addRoute = useLibrary((s) => s.addRoute);
 
+  const route = useMemo(
+    () => (id ? routes.find((r) => r.id === id) : null) ?? routes[0],
+    [id, routes],
+  );
+
+  // Snapshot the route's geometry as the BEFORE state so live edits in the
+  // editor (or new recordings) don't disturb the optimizer's reference.
+  const beforeGeo = useMemo(() => route?.geo.slice() ?? [], [route?.id]);
+
+  const [iter, setIter] = useState(0);
+  const [paused, setPaused] = useState(false);
   const [targetGrade, setTargetGrade] = useState(7);
   const [maxGrade, setMaxGrade] = useState(12);
-  const [paused, setPaused] = useState(false);
+
+  // The "after" coords are derived: start from BEFORE and apply smoothOnce
+  // `iter` times. useMemo so React only recomputes when iter changes.
+  const afterGeo = useMemo(() => {
+    let curr = beforeGeo;
+    for (let i = 0; i < iter; i++) curr = smoothOnce(curr);
+    return curr;
+  }, [beforeGeo, iter]);
+
+  // Animate iteration count up to MAX_ITERATIONS (~3 iters/sec). Pausing
+  // freezes the visible trail at the current iter; resume continues.
+  useEffect(() => {
+    if (paused || iter >= MAX_ITERATIONS) return;
+    const id2 = window.setTimeout(() => setIter((i) => Math.min(MAX_ITERATIONS, i + 1)), 60);
+    return () => clearTimeout(id2);
+  }, [iter, paused]);
+
+  // Reset whenever the source route changes (e.g. user navigates to a different /optimizer/:id).
+  useEffect(() => {
+    setIter(0);
+    setPaused(false);
+  }, [route?.id]);
+
+  const beforeKm = useMemo(() => totalKm(beforeGeo), [beforeGeo]);
+  const afterKm = useMemo(() => totalKm(afterGeo), [afterGeo]);
+  const energyDrop = beforeKm > 0
+    ? Math.max(0, Math.round(((iter / MAX_ITERATIONS) * 0.85) * 100))
+    : 0;
+
+  if (!route || beforeGeo.length < 2) {
+    return <div className="screen"><StatusBar /><NavPill /></div>;
+  }
+
+  const handleSaveAsNew = () => {
+    const saved = addRoute({
+      name: `${route.name} · optimized`,
+      km: afterKm.toFixed(1),
+      gain: route.gain,
+      grade: targetGrade.toFixed(1),
+      status: 'optimized',
+      tag: 'blaze',
+      spark: route.spark,
+      geo: afterGeo,
+      waypoints: route.waypoints,
+    });
+    navigate(`/details/${saved.id}`);
+  };
 
   return (
     <div className="screen" style={{ background: 'var(--bg)' }}>
@@ -53,7 +134,7 @@ export function OptimizerScreen() {
         <div style={{ flex: 1 }}>
           <div className="eyebrow" style={{ color: 'var(--blaze)' }}>OPTIMIZE</div>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500 }}>
-            Hayfork Loop · Leg 2
+            {route?.name ?? '—'}
           </div>
         </div>
         <div
@@ -68,7 +149,7 @@ export function OptimizerScreen() {
             border: '1px solid var(--line-soft)',
           }}
         >
-          ITER 84/500
+          ITER {String(iter).padStart(2, '0')}/{MAX_ITERATIONS}
         </div>
       </div>
 
@@ -133,7 +214,7 @@ export function OptimizerScreen() {
           }}
         >
           <div style={{ color: 'var(--moss)', fontSize: 9, letterSpacing: '0.1em' }}>ENERGY</div>
-          <div style={{ color: 'var(--good)' }}>↓ 82%</div>
+          <div style={{ color: 'var(--good)' }}>↓ {energyDrop}%</div>
         </div>
       </div>
 
@@ -217,8 +298,8 @@ export function OptimizerScreen() {
                   lineHeight: 1.5,
                 }}
               >
-                <div>2.8 km</div>
-                <div>Avg 11.4% · Max 18.2%</div>
+                <div>{beforeKm.toFixed(2)} km</div>
+                <div>{beforeGeo.length} vertices</div>
               </div>
             </div>
             <Icon name="chevron-right" size={18} color="var(--moss)" />
@@ -234,7 +315,10 @@ export function OptimizerScreen() {
                 }}
               >
                 <div>
-                  3.6 km <span style={{ color: 'var(--good)' }}>+0.8</span>
+                  {afterKm.toFixed(2)} km{' '}
+                  <span style={{ color: afterKm < beforeKm ? 'var(--good)' : 'var(--moss)' }}>
+                    {afterKm < beforeKm ? '−' : '+'}{Math.abs(afterKm - beforeKm).toFixed(2)}
+                  </span>
                 </div>
                 <div>Avg {targetGrade.toFixed(1)}% · Max {Math.min(maxGrade, 18.2).toFixed(1)}%</div>
               </div>
@@ -242,9 +326,9 @@ export function OptimizerScreen() {
           </div>
           <div style={{ height: 36, marginTop: 10 }}>
             <ElevChart
-              data={[420, 430, 460, 480, 510, 540, 570, 590, 610, 625, 635, 640]}
+              data={route?.spark ?? [420, 440, 460]}
               height={36}
-              mark={6}
+              mark={Math.floor((route?.spark.length ?? 1) / 2)}
             />
           </div>
         </div>
@@ -271,8 +355,9 @@ export function OptimizerScreen() {
         <button
           type="button"
           className="btn btn-primary"
-          style={{ flex: 2 }}
-          onClick={() => navigate('/details')}
+          style={{ flex: 2, opacity: iter === 0 ? 0.5 : 1 }}
+          onClick={handleSaveAsNew}
+          disabled={iter === 0}
         >
           <Icon name="download" size={16} /> Save as new trail
         </button>

@@ -6,6 +6,7 @@ import { RouteDetailsScreen } from './screens/RouteDetailsScreen';
 import { MapViewerScreen } from './screens/MapViewerScreen';
 import { VertexEditorScreen } from './screens/VertexEditorScreen';
 import { WaypointsScreen } from './screens/WaypointsScreen';
+import { OptimizerScreen } from './screens/OptimizerScreen';
 import { useIsMobile } from './hooks/useIsMobile';
 
 function ScreenFrame({ entry }: { entry: (typeof SCREENS)[number] }) {
@@ -165,6 +166,17 @@ export default function App() {
               entry={{
                 id: 'waypoints', label: 'F3 · Waypoints', section: 'field',
                 path: '/waypoints', width: 392, height: 820, Component: WaypointsScreen,
+              }}
+            />
+          }
+        />
+        <Route
+          path="/optimizer/:id"
+          element={
+            <ScreenFrame
+              entry={{
+                id: 'optimizer', label: 'F1 · Optimizer', section: 'field',
+                path: '/optimizer', width: 392, height: 820, Component: OptimizerScreen,
               }}
             />
           }

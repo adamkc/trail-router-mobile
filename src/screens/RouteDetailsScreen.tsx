@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
@@ -66,6 +66,8 @@ export function RouteDetailsScreen() {
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
   const routes = useLibrary((s) => s.routes);
+  const renameRoute = useLibrary((s) => s.renameRoute);
+  const removeRoute = useLibrary((s) => s.removeRoute);
 
   // Look up the route from the URL param, falling back to the top of the library
   // (e.g. when the canvas previews this screen without a specific route in mind).
@@ -73,6 +75,9 @@ export function RouteDetailsScreen() {
     () => (id ? routes.find((r) => r.id === id) : null) ?? routes[0],
     [id, routes],
   );
+
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState('');
 
   if (!route) {
     return (
@@ -110,23 +115,80 @@ export function RouteDetailsScreen() {
         >
           <Icon name="back" size={18} />
         </button>
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div className="eyebrow">ROUTE · {route.id.slice(0, 8).toUpperCase()}</div>
-          <div
-            style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 20,
-              fontWeight: 500,
-              letterSpacing: '-0.01em',
-              color: accent,
-            }}
-          >
-            {route.name}
-          </div>
+          {editingName ? (
+            <input
+              type="text"
+              autoFocus
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  renameRoute(route.id, draftName);
+                  setEditingName(false);
+                } else if (e.key === 'Escape') {
+                  setEditingName(false);
+                }
+              }}
+              onBlur={() => {
+                if (draftName.trim() && draftName.trim() !== route.name) {
+                  renameRoute(route.id, draftName);
+                }
+                setEditingName(false);
+              }}
+              style={{
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: '1px solid var(--blaze)',
+                outline: 'none',
+                fontFamily: 'var(--font-display)',
+                fontSize: 20,
+                fontWeight: 500,
+                color: 'var(--bone)',
+                letterSpacing: '-0.01em',
+                padding: '2px 0',
+                caretColor: 'var(--blaze)',
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => { setDraftName(route.name); setEditingName(true); }}
+              style={{
+                all: 'unset',
+                display: 'block',
+                width: '100%',
+                fontFamily: 'var(--font-display)',
+                fontSize: 20,
+                fontWeight: 500,
+                letterSpacing: '-0.01em',
+                color: accent,
+                cursor: 'text',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title="Tap to rename"
+            >
+              {route.name}
+            </button>
+          )}
         </div>
-        <div className="iconbtn">
-          <Icon name="more" size={18} />
-        </div>
+        <button
+          type="button"
+          className="iconbtn"
+          onClick={() => {
+            if (!confirm(`Delete "${route.name}"?`)) return;
+            removeRoute(route.id);
+            navigate('/library');
+          }}
+          aria-label="Delete route"
+          style={{ color: 'var(--danger)' }}
+        >
+          <Icon name="close" size={18} />
+        </button>
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', padding: '0 20px 20px' }}>

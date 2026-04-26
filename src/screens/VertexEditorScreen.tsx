@@ -5,10 +5,27 @@ import { NavPill } from '../components/NavPill';
 import { Icon, type IconName } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
-import { MapPin, MapActiveVertex, MapDraggableVertex, FitBoundsToCoords } from '../components/MapMarkers';
+import { MapPin, MapActiveVertex, MapDraggableVertex, MapClickHandler, FitBoundsToCoords } from '../components/MapMarkers';
 import { SlopeRibbon } from '../components/SlopeRibbon';
 import { resolveCssVar, HAYFORK } from '../utils/geo';
 import { useLibrary } from '../store/library';
+import { haversineKm } from '../store/recording';
+
+/** Point-to-segment distance in meters (lat/lng → simple Cartesian projection,
+ *  fine for trail-scale meters; final distance via Haversine to keep accuracy). */
+function pointToSegmentMeters(
+  p: [number, number],
+  a: [number, number],
+  b: [number, number],
+): { dist: number; nearest: [number, number] } {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const lenSq = dx * dx + dy * dy;
+  const t = lenSq === 0 ? 0 : ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / lenSq;
+  const tc = Math.max(0, Math.min(1, t));
+  const nearest: [number, number] = [a[0] + tc * dx, a[1] + tc * dy];
+  return { dist: haversineKm(nearest, p) * 1000, nearest };
+}
 
 type EditorTool = 'MOVE' | 'ADD' | 'DELETE' | 'FREEZE' | 'WAYPOINT' | 'OPTIMIZE';
 const TOOLS: Array<{ icon: IconName; label: EditorTool }> = [
@@ -48,9 +65,9 @@ export function VertexEditorScreen() {
 
   const handleToolClick = (tool: EditorTool) => {
     if (tool === 'OPTIMIZE') {
-      navigate('/optimizer');
+      if (route) navigate(`/optimizer/${route.id}`);
     } else if (tool === 'WAYPOINT') {
-      navigate('/waypoints');
+      if (route) navigate(`/waypoints/${route.id}`);
     } else {
       setActiveTool(tool);
     }
@@ -63,6 +80,56 @@ export function VertexEditorScreen() {
       return next;
     });
   }, []);
+
+  const insertVertexNear = useCallback((lng: number, lat: number) => {
+    setCoords((prev) => {
+      if (prev.length < 2) return [...prev, [lng, lat]];
+      // Find the segment whose nearest point to the click is closest;
+      // insert the new vertex right after that segment's start.
+      let bestIdx = 0;
+      let bestDist = Infinity;
+      let bestNearest: [number, number] = [lng, lat];
+      for (let i = 0; i < prev.length - 1; i++) {
+        const { dist, nearest } = pointToSegmentMeters([lng, lat], prev[i], prev[i + 1]);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIdx = i;
+          bestNearest = nearest;
+        }
+      }
+      // Snap to the segment's nearest point so the line stays continuous
+      // (rather than the user's exact tap, which could create a kink).
+      const next = prev.slice();
+      next.splice(bestIdx + 1, 0, bestNearest);
+      return next;
+    });
+    setActiveIdx((curr) => curr); // active idx index doesn't change semantically
+  }, []);
+
+  const deleteVertex = useCallback((i: number) => {
+    setCoords((prev) => {
+      if (prev.length <= 2) return prev; // keep at least the two endpoints
+      const next = prev.slice();
+      next.splice(i, 1);
+      return next;
+    });
+    setActiveIdx((curr) => Math.max(0, curr >= i ? curr - 1 : curr));
+  }, []);
+
+  const onMapTap = useCallback(
+    (lng: number, lat: number) => {
+      if (activeTool === 'ADD') insertVertexNear(lng, lat);
+    },
+    [activeTool, insertVertexNear],
+  );
+
+  const onVertexSelect = useCallback(
+    (i: number) => {
+      if (activeTool === 'DELETE' && !frozenIdx.includes(i)) deleteVertex(i);
+      else setActiveIdx(i);
+    },
+    [activeTool, frozenIdx, deleteVertex],
+  );
 
   const editedCount = coords.reduce(
     (acc, c, i) => acc + (c[0] !== originalGeo[i]?.[0] || c[1] !== originalGeo[i]?.[1] ? 1 : 0),
@@ -93,6 +160,7 @@ export function VertexEditorScreen() {
       <div style={{ position: 'absolute', inset: 0 }}>
         <MapCanvas center={HAYFORK} zoom={15}>
           <FitBoundsToCoords coords={originalGeo} padding={48} />
+          {activeTool === 'ADD' && <MapClickHandler onTap={onMapTap} />}
           <MapGeoLine id="edit-trail" coords={coords} color={blaze} width={3} onTop />
           {coords.map((coord, i) => {
             if (i === activeIdx) return null;
@@ -108,7 +176,7 @@ export function VertexEditorScreen() {
                 color="#E8E4D8"
                 size={12}
                 onDrag={(lng, lat) => moveVertex(i, lng, lat)}
-                onSelect={() => setActiveIdx(i)}
+                onSelect={() => onVertexSelect(i)}
               />
             );
           })}

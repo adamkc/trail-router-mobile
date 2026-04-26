@@ -74,6 +74,10 @@ interface LibraryState {
   addRoute: (input: Omit<LibraryRoute, 'id'>) => LibraryRoute;
   /** Replace a route's geographic path (called by the editor on Save). */
   updateRouteGeo: (id: string, geo: Array<[number, number]>) => void;
+  /** Rename a route in place (called from /details). */
+  renameRoute: (id: string, name: string) => void;
+  /** Remove a route. */
+  removeRoute: (id: string) => void;
 }
 
 /** Stable hash → seeded PRNG so each named route always gets the same shape. */
@@ -130,6 +134,16 @@ export const useLibrary = create<LibraryState>()(
         set((s) => ({
           routes: s.routes.map((r) => (r.id === id ? { ...r, geo } : r)),
         }));
+      },
+      renameRoute: (id, name) => {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+        set((s) => ({
+          routes: s.routes.map((r) => (r.id === id ? { ...r, name: trimmed } : r)),
+        }));
+      },
+      removeRoute: (id) => {
+        set((s) => ({ routes: s.routes.filter((r) => r.id !== id) }));
       },
     }),
     {

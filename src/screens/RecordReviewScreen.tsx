@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
@@ -10,6 +10,7 @@ import { ElevChart } from '../components/ElevChart';
 import { useRecording, draftSaveStatusToRoute, type SaveStatus } from '../store/recording';
 import { useLibrary } from '../store/library';
 import { resolveCssVar } from '../utils/geo';
+import { elevationGain, fetchElevations, resampleSpark } from '../utils/elevation';
 
 const HAYFORK: [number, number] = [-122.5208, 40.7289];
 
@@ -75,20 +76,41 @@ export function RecordReviewScreen() {
   const headSlice = displayTrack.slice(0, trimmedStart);
   const tailSlice = displayTrack.slice(displayTrack.length - trimmedEnd);
 
+  const [saving, setSaving] = useState(false);
+
   const handleDiscard = () => {
     discard();
     navigate('/home');
   };
-  const handleSave = () => {
+  const handleSave = async () => {
+    setSaving(true);
+    // Try to backfill real elevation for the recorded path. If the user has
+    // no network or the API fails, we fall back to the synthetic ramp from
+    // displayGain (current behavior).
+    let realSpark = elev;
+    let realGain = displayGain;
+    let realGrade = avgGrade;
+    try {
+      const fetched = await fetchElevations(displayTrack);
+      if (fetched && fetched.length === displayTrack.length) {
+        realGain = elevationGain(fetched);
+        realSpark = resampleSpark(fetched, 14);
+        realGrade = displayDistance > 0
+          ? ((realGain / 10) / displayDistance).toFixed(1)
+          : '0.0';
+      }
+    } catch {
+      // ignore — keep the synthetic values
+    }
     const { status, tag } = draftSaveStatusToRoute(draftSaveStatus);
     addRoute({
       name: draftName.trim() || 'Untitled recording',
       km: displayDistance.toFixed(1),
-      gain: `+${displayGain}`,
-      grade: avgGrade,
+      gain: `+${realGain}`,
+      grade: realGrade,
       status,
       tag,
-      spark: elev,
+      spark: realSpark,
       geo: displayTrack,
       // Each captured waypoint already carries its coord; carry them onto the
       // saved route so /map/:id, /waypoints/:id, and the inspector can show them.
@@ -425,8 +447,14 @@ export function RecordReviewScreen() {
         <button type="button" className="btn btn-danger" style={{ flex: 1 }} onClick={handleDiscard}>
           Discard
         </button>
-        <button type="button" className="btn btn-primary" style={{ flex: 2 }} onClick={handleSave}>
-          <Icon name="download" size={16} /> Save to project
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={{ flex: 2, opacity: saving ? 0.7 : 1 }}
+          onClick={handleSave}
+          disabled={saving}
+        >
+          <Icon name="download" size={16} /> {saving ? 'Fetching elevation…' : 'Save to project'}
         </button>
       </div>
       <NavPill />

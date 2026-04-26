@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import maplibregl from 'maplibre-gl';
 import { StatusBar } from '../components/StatusBar';
@@ -7,7 +7,7 @@ import { Icon } from '../components/Icon';
 import { MapCanvas, useMapInstance } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
 import { ElevChart } from '../components/ElevChart';
-import { useRecording, haversineKm, type GpsState } from '../store/recording';
+import { useRecording, haversineKm, WAYPOINT_TYPES, type GpsState, type WaypointKind } from '../store/recording';
 import { useLibrary } from '../store/library';
 
 const HAYFORK: [number, number] = [-122.5208, 40.7289];
@@ -27,6 +27,7 @@ export function RecordScreen() {
   const currentGrade = useRecording((s) => s.currentGrade);
   const targetGrade  = useRecording((s) => s.targetGrade);
   const geoTrack     = useRecording((s) => s.geoTrack);
+  const capturedWaypoints = useRecording((s) => s.capturedWaypoints);
   const gps          = useRecording((s) => s.gps);
   const start        = useRecording((s) => s.start);
   const pause        = useRecording((s) => s.pause);
@@ -35,7 +36,8 @@ export function RecordScreen() {
   const bumpElapsed  = useRecording((s) => s.bumpElapsed);
   const pushFix      = useRecording((s) => s.pushFix);
   const setGpsState  = useRecording((s) => s.setGpsState);
-  const addWaypoint  = useRecording((s) => s.addWaypoint);
+  const addWaypointOfType = useRecording((s) => s.addWaypointOfType);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Auto-start a recording if the user lands here with no active session.
   useEffect(() => {
@@ -372,7 +374,7 @@ export function RecordScreen() {
       >
         <button
           type="button"
-          onClick={addWaypoint}
+          onClick={() => setPickerOpen(true)}
           style={{
             width: 52,
             height: 52,
@@ -381,10 +383,34 @@ export function RecordScreen() {
             border: '1px solid var(--line)',
             display: 'grid',
             placeItems: 'center',
+            position: 'relative',
           }}
           aria-label="Capture waypoint"
         >
           <Icon name="waypoint" size={20} color="var(--topo)" />
+          {capturedWaypoints.length > 0 && (
+            <span
+              style={{
+                position: 'absolute',
+                top: -4,
+                right: -4,
+                minWidth: 18,
+                height: 18,
+                padding: '0 5px',
+                borderRadius: 9,
+                background: 'var(--topo)',
+                color: '#1A1208',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 10,
+                fontWeight: 600,
+                display: 'grid',
+                placeItems: 'center',
+                border: '2px solid var(--bg)',
+              }}
+            >
+              {capturedWaypoints.length}
+            </span>
+          )}
         </button>
         <button
           type="button"
@@ -420,6 +446,18 @@ export function RecordScreen() {
           <Icon name="stop" size={20} color="var(--danger)" />
         </button>
       </div>
+
+      {/* Waypoint type picker modal */}
+      {pickerOpen && (
+        <WaypointPicker
+          onPick={(kind) => {
+            addWaypointOfType(kind);
+            setPickerOpen(false);
+          }}
+          onCancel={() => setPickerOpen(false)}
+        />
+      )}
+
       <NavPill />
     </div>
   );
@@ -457,6 +495,95 @@ const gpsBadgeColor = (g: GpsState): string =>
 
 // ─── Map child components: keep the map's MapLibre instance alive while
 //     reflecting reactive coords. They render null but manage markers/cameras.
+
+function WaypointPicker({
+  onPick,
+  onCancel,
+}: {
+  onPick: (kind: WaypointKind) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: 5,
+        background: 'color-mix(in oklch, var(--bg) 60%, transparent)',
+        backdropFilter: 'blur(6px)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'flex-end',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--surface)',
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          border: '1px solid var(--line-soft)',
+          padding: '14px 16px 22px',
+          margin: '0 8px 10px',
+          boxShadow: 'var(--sheet-shadow)',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+          <div className="eyebrow">CAPTURE WAYPOINT</div>
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="Cancel"
+            style={{ background: 'transparent', border: 'none', color: 'var(--moss)' }}
+          >
+            <Icon name="close" size={16} />
+          </button>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+          {WAYPOINT_TYPES.map((t) => (
+            <button
+              key={t.kind}
+              type="button"
+              onClick={() => onPick(t.kind)}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 6,
+                padding: '12px 4px',
+                borderRadius: 12,
+                background: 'var(--surface-2)',
+                border: `1px solid ${t.color}`,
+                color: t.color,
+              }}
+            >
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  background: t.color,
+                  color: '#1A1208',
+                  display: 'grid',
+                  placeItems: 'center',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 14,
+                  fontWeight: 700,
+                }}
+              >
+                {t.icon}
+              </div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.08em' }}>
+                {t.label.toUpperCase()}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function FollowUserCamera({ coord, active }: { coord: [number, number] | null; active: boolean }) {
   const { map } = useMapInstance();

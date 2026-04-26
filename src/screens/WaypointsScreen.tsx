@@ -1,66 +1,58 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
 import { MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers';
-import { svgArrayToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
-
-const TRAIL_SVG: Array<[number, number]> = [
-  [40, 500], [80, 470], [130, 450], [175, 420], [220, 390],
-  [260, 360], [300, 320], [340, 280], [370, 230],
-];
-
-const MAP_PINS_SVG: Array<{ pos: [number, number]; icon: string; color: string }> = [
-  { pos: [80, 470],  icon: 'W', color: 'var(--topo)'   },
-  { pos: [175, 420], icon: 'H', color: 'var(--danger)' },
-  { pos: [260, 360], icon: 'V', color: 'var(--warn)'   },
-  { pos: [300, 320], icon: 'P', color: 'var(--good)'   },
-  { pos: [370, 230], icon: 'C', color: 'var(--bone)'   },
-];
-
-interface Waypoint {
-  id: number;
-  icon: string;
-  type: string;
-  color: string;
-  label: string;
-  note: string;
-  dist: string;
-}
-
-const WAYPOINTS: Waypoint[] = [
-  { id: 1, icon: 'W', type: 'Water',  color: 'var(--topo)',   label: 'Big Creek spring',  note: 'Perennial · cold',          dist: '0.8 km' },
-  { id: 2, icon: 'H', type: 'Hazard', color: 'var(--danger)', label: 'Loose scree',        note: 'North face · ~30m',         dist: '1.4 km' },
-  { id: 3, icon: 'V', type: 'Vista',  color: 'var(--warn)',   label: 'Ridge overlook',     note: 'SW exposure',               dist: '2.1 km' },
-  { id: 4, icon: 'P', type: 'Photo',  color: 'var(--good)',   label: 'Fallen oak',         note: '3 photos',                  dist: '3.0 km' },
-  { id: 5, icon: 'C', type: 'Camp',   color: 'var(--bone)',   label: 'Meadow bivy',        note: 'Flat · wind-protected',    dist: '3.8 km' },
-];
+import { resolveCssVar, HAYFORK } from '../utils/geo';
+import { useLibrary } from '../store/library';
+import { haversineKm } from '../store/recording';
 
 type WaypointFilter = 'ALL' | 'WATER' | 'HAZARD' | 'VISTA' | 'PHOTO' | 'CAMP';
 const FILTER_KEYS: readonly WaypointFilter[] = ['ALL', 'WATER', 'HAZARD', 'VISTA', 'PHOTO', 'CAMP'] as const;
 
 export function WaypointsScreen() {
   const navigate = useNavigate();
+  const { id } = useParams<{ id?: string }>();
+  const routes = useLibrary((s) => s.routes);
+  const route = useMemo(
+    () => (id ? routes.find((r) => r.id === id) : null) ?? routes[0],
+    [id, routes],
+  );
+
   const [filter, setFilter] = useState<WaypointFilter>('ALL');
 
-  const visibleWaypoints = WAYPOINTS.filter(
-    (w) => filter === 'ALL' || w.type.toUpperCase() === filter,
-  );
+  if (!route) {
+    return <div className="screen"><StatusBar /><NavPill /></div>;
+  }
 
-  const trailGeo = useMemo(() => svgArrayToGeo(TRAIL_SVG), []);
-  const pinsGeo  = useMemo(
-    () => MAP_PINS_SVG.map((p) => ({ ...p, coord: svgArrayToGeo([p.pos])[0] })),
-    [],
+  // Per-waypoint distance from route start, computed once per route.
+  const waypointsWithDist = useMemo(() => {
+    if (route.geo.length < 2) return route.waypoints.map((w) => ({ ...w, distKm: 0 }));
+    return route.waypoints.map((w) => {
+      // Find nearest vertex on the route to the waypoint, then sum the
+      // route's leading segments up to that vertex for the distance.
+      let bestIdx = 0; let best = Infinity;
+      for (let i = 0; i < route.geo.length; i++) {
+        const d = haversineKm(route.geo[i], w.coord);
+        if (d < best) { best = d; bestIdx = i; }
+      }
+      let dist = 0;
+      for (let i = 1; i <= bestIdx; i++) dist += haversineKm(route.geo[i - 1], route.geo[i]);
+      return { ...w, distKm: dist };
+    });
+  }, [route.geo, route.waypoints]);
+
+  const visibleWaypoints = waypointsWithDist.filter(
+    (w) => filter === 'ALL' || w.type === filter,
   );
-  // Hide pins on the mini-map for filtered-out types.
-  const visiblePinsGeo = pinsGeo.filter((p) => filter === 'ALL' || p.icon === filter[0]);
+  const visibleMapPins = visibleWaypoints;
 
   // Per-type counts for the chip labels.
-  const typeCounts: Record<string, number> = WAYPOINTS.reduce<Record<string, number>>((acc, w) => {
-    acc[w.type.toUpperCase()] = (acc[w.type.toUpperCase()] || 0) + 1;
+  const typeCounts: Record<string, number> = waypointsWithDist.reduce<Record<string, number>>((acc, w) => {
+    acc[w.type] = (acc[w.type] || 0) + 1;
     return acc;
   }, {});
 
@@ -72,7 +64,7 @@ export function WaypointsScreen() {
       <div style={{ padding: '6px 16px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
         <button
           type="button"
-          onClick={() => navigate('/details')}
+          onClick={() => navigate(`/details/${route.id}`)}
           style={{
             width: 40,
             height: 40,
@@ -88,13 +80,15 @@ export function WaypointsScreen() {
           <Icon name="back" size={18} />
         </button>
         <div style={{ flex: 1 }}>
-          <div className="eyebrow">HAYFORK LOOP</div>
+          <div className="eyebrow">{route.name.toUpperCase()}</div>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500 }}>
             Waypoints{' '}
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--moss)' }}>· 5</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--moss)' }}>· {waypointsWithDist.length}</span>
           </div>
         </div>
-        <div
+        <button
+          type="button"
+          onClick={() => navigate(`/record?follow=${encodeURIComponent(route.id)}`)}
           style={{
             width: 40,
             height: 40,
@@ -102,10 +96,12 @@ export function WaypointsScreen() {
             background: 'var(--blaze)',
             display: 'grid',
             placeItems: 'center',
+            border: 'none',
           }}
+          aria-label="Record + capture waypoints"
         >
           <Icon name="plus" size={18} color="#1A1208" />
-        </div>
+        </button>
       </div>
 
       {/* Mini map */}
@@ -119,11 +115,11 @@ export function WaypointsScreen() {
           border: '1px solid var(--line-soft)',
         }}
       >
-        <MapCanvas center={HAYFORK} zoom={14} interactive={false}>
-          <FitBoundsToCoords coords={trailGeo} padding={36} />
-          <MapGeoLine id="wp-trail" coords={trailGeo} color={resolveCssVar('var(--blaze)')} width={2.5} onTop />
-          {visiblePinsGeo.map((p) => (
-            <MapWaypoint key={p.icon} coord={p.coord} icon={p.icon} color={resolveCssVar(p.color)} size={20} />
+        <MapCanvas center={route.geo[0] ?? HAYFORK} zoom={14} interactive={false}>
+          <FitBoundsToCoords coords={route.geo} padding={36} />
+          <MapGeoLine id={`wp-${route.id}-trail`} coords={route.geo} color={resolveCssVar('var(--blaze)')} width={2.5} onTop />
+          {visibleMapPins.map((w) => (
+            <MapWaypoint key={w.id} coord={w.coord} icon={w.icon} color={resolveCssVar(w.color)} size={20} />
           ))}
         </MapCanvas>
       </div>
@@ -132,7 +128,7 @@ export function WaypointsScreen() {
       <div style={{ display: 'flex', gap: 6, padding: '12px 16px 8px', overflowX: 'auto' }}>
         {FILTER_KEYS.map((k) => {
           const active = filter === k;
-          const count = k === 'ALL' ? WAYPOINTS.length : (typeCounts[k] ?? 0);
+          const count = k === 'ALL' ? waypointsWithDist.length : (typeCounts[k] ?? 0);
           return (
             <button
               key={k}
@@ -169,7 +165,9 @@ export function WaypointsScreen() {
               letterSpacing: '0.06em',
             }}
           >
-            NO {filter} WAYPOINTS
+            {waypointsWithDist.length === 0
+              ? 'NO WAYPOINTS · CAPTURE SOME WHILE RECORDING'
+              : `NO ${filter} WAYPOINTS`}
           </div>
         ) : visibleWaypoints.map((w) => (
           <div
@@ -216,11 +214,11 @@ export function WaypointsScreen() {
                   marginTop: 2,
                 }}
               >
-                {w.type.toUpperCase()} · {w.note.toUpperCase()}
+                {w.type} · CAPTURED {w.t}
               </div>
             </div>
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--bone-dim)' }}>
-              {w.dist}
+              {w.distKm.toFixed(1)} km
             </div>
           </div>
         ))}

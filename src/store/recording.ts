@@ -5,9 +5,11 @@ export type RecordingStatus = 'idle' | 'recording' | 'paused' | 'reviewing';
 export type SaveStatus = 'draft' | 'built' | 'survey';
 export type GpsState = 'unknown' | 'requesting' | 'tracking' | 'denied' | 'unavailable' | 'simulated';
 
+export type WaypointKind = 'PHOTO' | 'WATER' | 'HAZARD' | 'VISTA' | 'CAMP';
+
 export interface CapturedWaypoint {
   id: string;
-  type: 'PHOTO' | 'WATER' | 'HAZARD' | 'VISTA' | 'CAMP';
+  type: WaypointKind;
   icon: 'P' | 'W' | 'H' | 'V' | 'C';
   color: string;
   label: string;
@@ -15,6 +17,14 @@ export interface CapturedWaypoint {
   /** [lng, lat] of the point where the waypoint was captured. */
   coord: [number, number];
 }
+
+export const WAYPOINT_TYPES: Array<{ kind: WaypointKind; icon: CapturedWaypoint['icon']; color: string; label: string }> = [
+  { kind: 'WATER',  icon: 'W', color: 'var(--topo)',   label: 'Water'  },
+  { kind: 'HAZARD', icon: 'H', color: 'var(--danger)', label: 'Hazard' },
+  { kind: 'VISTA',  icon: 'V', color: 'var(--warn)',   label: 'Vista'  },
+  { kind: 'PHOTO',  icon: 'P', color: 'var(--good)',   label: 'Photo'  },
+  { kind: 'CAMP',   icon: 'C', color: 'var(--bone)',   label: 'Camp'   },
+];
 
 interface RecordingState {
   status: RecordingStatus;
@@ -41,6 +51,8 @@ interface RecordingState {
   pushFix: (lng: number, lat: number, elev: number | null, accuracy?: number) => void;
   /** Bump the elapsed counter by one second. Called by the screen's 1Hz interval. */
   bumpElapsed: () => void;
+  /** Capture a waypoint of a given type at the current GPS position. */
+  addWaypointOfType: (kind: WaypointKind, label?: string) => void;
   addWaypoint: () => void;
   stop: () => void;
   discard: () => void;
@@ -55,12 +67,6 @@ interface RecordingState {
 
 const HAYFORK: [number, number] = [-122.5208, 40.7289];
 
-const WAYPOINT_TEMPLATES: Omit<CapturedWaypoint, 'id' | 't' | 'coord'>[] = [
-  { type: 'PHOTO',  icon: 'P', color: 'var(--topo)',   label: 'Creek crossing'      },
-  { type: 'WATER',  icon: 'W', color: 'var(--topo)',   label: 'Spring — perennial?' },
-  { type: 'HAZARD', icon: 'H', color: 'var(--danger)', label: 'Loose scree'         },
-  { type: 'VISTA',  icon: 'V', color: 'var(--warn)',   label: 'Ridge overlook'      },
-];
 
 const formatT = (elapsed: number): string => {
   const m = Math.floor(elapsed / 60);
@@ -147,18 +153,28 @@ export const useRecording = create<RecordingState>((set) => ({
   bumpElapsed: () =>
     set((s) => (s.status === 'recording' ? { elapsed: s.elapsed + 1 } : s)),
 
-  addWaypoint: () =>
+  addWaypointOfType: (kind, label) =>
     set((s) => {
-      const template = WAYPOINT_TEMPLATES[s.capturedWaypoints.length % WAYPOINT_TEMPLATES.length];
+      const template = WAYPOINT_TYPES.find((t) => t.kind === kind) ?? WAYPOINT_TYPES[0];
       const at: [number, number] = s.geoTrack[s.geoTrack.length - 1] ?? HAYFORK;
       const next: CapturedWaypoint = {
-        ...template,
         id: `wp-${s.capturedWaypoints.length + 1}`,
+        type: template.kind,
+        icon: template.icon,
+        color: template.color,
+        label: label?.trim() || template.label,
         t: formatT(s.elapsed),
         coord: at,
       };
       return { capturedWaypoints: [...s.capturedWaypoints, next] };
     }),
+
+  addWaypoint: () => {
+    // Legacy: cycle through types so callers without a picker still produce
+    // varied output. New code should use addWaypointOfType().
+    const len = (useRecording.getState().capturedWaypoints?.length ?? 0);
+    useRecording.getState().addWaypointOfType(WAYPOINT_TYPES[len % WAYPOINT_TYPES.length].kind);
+  },
 
   stop: () => set({ status: 'reviewing' }),
   discard: () => set(initialState()),

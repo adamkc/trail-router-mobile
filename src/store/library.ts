@@ -5,6 +5,21 @@ import { HAYFORK } from '../utils/geo';
 
 export type RouteStatus = 'optimized' | 'draft' | 'built' | 'review';
 
+export type WaypointKind = 'PHOTO' | 'WATER' | 'HAZARD' | 'VISTA' | 'CAMP';
+
+export interface RouteWaypoint {
+  id: string;
+  type: WaypointKind;
+  /** Single-letter glyph rendered on map markers + lists. */
+  icon: 'P' | 'W' | 'H' | 'V' | 'C';
+  /** CSS color string (token reference is fine — resolved at render). */
+  color: string;
+  label: string;
+  /** Stamp from when the waypoint was captured: "0:14" relative or "APR 25". */
+  t: string;
+  coord: [number, number];
+}
+
 export interface LibraryRoute {
   id: string;
   name: string;
@@ -17,6 +32,41 @@ export interface LibraryRoute {
   /** Geographic [lng, lat] line. Recordings store their captured GPS path here;
    *  seed routes get a procedurally synthesized path around Hayfork. */
   geo: Array<[number, number]>;
+  /** Waypoints captured during recording or added later. */
+  waypoints: RouteWaypoint[];
+}
+
+/** Synthetic waypoints sprinkled along a seed route — gives the demo something
+ *  to show on the map + waypoint screens before the user records anything. */
+function syntheticWaypoints(route: { id: string; geo: Array<[number, number]> }): RouteWaypoint[] {
+  if (route.geo.length < 4) return [];
+  // Hash the id so each route gets a stable but distinct starting offset, then
+  // step by 7 across the templates list to vary types within a single route.
+  let h = 0;
+  for (let i = 0; i < route.id.length; i++) h = (Math.imul(31, h) + route.id.charCodeAt(i)) | 0;
+  const templates: Array<{ kind: WaypointKind; icon: RouteWaypoint['icon']; color: string; label: string }> = [
+    { kind: 'WATER',  icon: 'W', color: 'var(--topo)',   label: 'Spring crossing'  },
+    { kind: 'HAZARD', icon: 'H', color: 'var(--danger)', label: 'Loose scree'      },
+    { kind: 'VISTA',  icon: 'V', color: 'var(--warn)',   label: 'Ridge overlook'   },
+    { kind: 'PHOTO',  icon: 'P', color: 'var(--good)',   label: 'Fallen oak'       },
+    { kind: 'CAMP',   icon: 'C', color: 'var(--bone)',   label: 'Bivy spot'        },
+  ];
+  const count = Math.min(3, Math.max(1, Math.floor(route.geo.length / 4)));
+  const out: RouteWaypoint[] = [];
+  for (let i = 0; i < count; i++) {
+    const t = templates[Math.abs(h + i * 7) % templates.length];
+    const idx = Math.min(route.geo.length - 1, Math.floor(((i + 1) / (count + 1)) * route.geo.length));
+    out.push({
+      id: `${route.id}-wp-${i + 1}`,
+      type: t.kind,
+      icon: t.icon,
+      color: t.color,
+      label: t.label,
+      t: `${i + 1}:00`,
+      coord: route.geo[idx],
+    });
+  }
+  return out;
 }
 
 interface LibraryState {
@@ -53,7 +103,7 @@ function syntheticGeoFor(name: string, segments = 12): Array<[number, number]> {
   return pts;
 }
 
-const SEED_BASE: Array<Omit<LibraryRoute, 'geo'>> = [
+const SEED_BASE: Array<Omit<LibraryRoute, 'geo' | 'waypoints'>> = [
   { id: 'hayfork-loop',            name: 'Hayfork Loop',          km: '14.2', gain: '+640', grade: '6.1',  status: 'optimized', tag: 'blaze', spark: [420, 430, 480, 520, 580, 610, 640, 620, 560, 500, 440, 420] },
   { id: 'north-ridge-traverse',    name: 'North Ridge Traverse',  km: '8.7',  gain: '+390', grade: '7.4',  status: 'draft',     tag: null,    spark: [300, 320, 340, 380, 420, 440, 460, 450, 430, 400] },
   { id: 'clear-creek-connector',   name: 'Clear Creek Connector', km: '5.3',  gain: '+180', grade: '4.2',  status: 'built',     tag: 'good',  spark: [280, 290, 310, 330, 350, 360, 370, 370, 365, 355] },
@@ -61,10 +111,10 @@ const SEED_BASE: Array<Omit<LibraryRoute, 'geo'>> = [
   { id: 'meadow-cutoff',           name: 'Meadow Cutoff',         km: '2.4',  gain: '+95',  grade: '3.1',  status: 'built',     tag: 'good',  spark: [220, 222, 225, 230, 240, 245, 250, 255, 260, 265] },
 ];
 
-const SEED: LibraryRoute[] = SEED_BASE.map((r) => ({
-  ...r,
-  geo: syntheticGeoFor(r.id, Math.max(8, r.spark.length)),
-}));
+const SEED: LibraryRoute[] = SEED_BASE.map((r) => {
+  const geo = syntheticGeoFor(r.id, Math.max(8, r.spark.length));
+  return { ...r, geo, waypoints: syntheticWaypoints({ id: r.id, geo }) };
+});
 
 export const useLibrary = create<LibraryState>()(
   persist(
@@ -84,9 +134,9 @@ export const useLibrary = create<LibraryState>()(
     }),
     {
       name: 'trail-router-library',
-      // Bumped from 1 → 2 because the schema added a `geo` field. Old persisted
-      // entries don't have it; the migrate step backfills synthetic geometry.
-      version: 2,
+      // v1 → v2: added `geo` field. v2 → v3: added `waypoints` field.
+      // Migrate backfills both for any older persisted entries.
+      version: 3,
       partialize: (state) => ({ routes: state.routes }),
       migrate: (persisted, fromVersion) => {
         const state = persisted as { routes?: LibraryRoute[] } | undefined;
@@ -94,6 +144,11 @@ export const useLibrary = create<LibraryState>()(
         if (fromVersion < 2) {
           state.routes = state.routes.map((r) =>
             r.geo && r.geo.length >= 2 ? r : { ...r, geo: syntheticGeoFor(r.id, Math.max(8, r.spark?.length ?? 10)) },
+          );
+        }
+        if (fromVersion < 3) {
+          state.routes = state.routes.map((r) =>
+            Array.isArray(r.waypoints) ? r : { ...r, waypoints: syntheticWaypoints({ id: r.id, geo: r.geo }) },
           );
         }
         return state;

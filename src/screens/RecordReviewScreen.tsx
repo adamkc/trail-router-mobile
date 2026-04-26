@@ -89,8 +89,18 @@ export function RecordReviewScreen() {
       status,
       tag,
       spark: elev,
-      // Persist the captured GPS path so /map/:id and /editor/:id can show it.
       geo: displayTrack,
+      // Each captured waypoint already carries its coord; carry them onto the
+      // saved route so /map/:id, /waypoints/:id, and the inspector can show them.
+      waypoints: capturedWaypoints.map((w) => ({
+        id: w.id,
+        type: w.type,
+        icon: w.icon,
+        color: w.color,
+        label: w.label,
+        t: w.t,
+        coord: w.coord,
+      })),
     });
     discard();
     navigate('/library');

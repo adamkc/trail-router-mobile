@@ -5,7 +5,7 @@ import { NavPill } from '../components/NavPill';
 import { Icon, type IconName } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
-import { MapPin, FitBoundsToCoords } from '../components/MapMarkers';
+import { MapPin, MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers';
 import { ElevChart } from '../components/ElevChart';
 import { resolveCssVar, HAYFORK } from '../utils/geo';
 import { useLibrary } from '../store/library';
@@ -56,6 +56,15 @@ export function MapViewerScreen() {
           <MapGeoLine id={`map-${route.id}`} coords={trailGeo} color={accent} width={4} onTop />
           <MapPin coord={start} background={resolveCssVar('var(--good)')}   size={16} />
           <MapPin coord={end}   background={resolveCssVar('var(--danger)')} size={16} />
+          {route.waypoints.map((w) => (
+            <MapWaypoint
+              key={w.id}
+              coord={w.coord}
+              icon={w.icon}
+              color={resolveCssVar(w.color)}
+              size={20}
+            />
+          ))}
         </MapCanvas>
 
         {/* Floating top bar — back + trail name + coords */}

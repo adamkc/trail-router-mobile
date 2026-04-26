@@ -91,6 +91,10 @@ export function parseGeoJsonRoutes(text: string): Array<Omit<LibraryRoute, 'id'>
         tag,
         spark: elevs.length >= 2 ? elevs : fallbackSpark,
         geo: coords,
+        // GeoJSON Features have <wpt>-style waypoints in a separate top-level
+        // entry, not embedded in the LineString — so imported routes start with
+        // an empty waypoints list. The user can add some via /record + capture.
+        waypoints: [],
       });
     }
   }

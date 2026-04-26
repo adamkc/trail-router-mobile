@@ -240,8 +240,26 @@ export function RouteDetailsScreen() {
             border: '1px solid var(--line-soft)',
           }}
         >
-          <DataRow label="STATUS"  value={route.status.toUpperCase()} />
-          <DataRow label="VERTICES" value={String(route.spark.length * 12)} />
+          <DataRow label="STATUS"   value={route.status.toUpperCase()} />
+          <DataRow label="VERTICES" value={String(route.geo.length)} />
+          <button
+            type="button"
+            onClick={() => navigate(`/waypoints/${route.id}`)}
+            style={{
+              all: 'unset',
+              display: 'flex',
+              justifyContent: 'space-between',
+              padding: '10px 0',
+              borderBottom: '1px solid var(--line-soft)',
+              cursor: 'pointer',
+            }}
+          >
+            <span className="stat-label">WAYPOINTS</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 15, color: 'var(--bone)', fontWeight: 500 }}>
+              {route.waypoints.length}
+              <Icon name="chevron-right" size={14} color="var(--moss)" />
+            </span>
+          </button>
           <DataRow label="SURFACE" value="SINGLETRACK" />
           <DataRow label="LAST EDITED" value="APR 25" unit="2026" />
           <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0' }}>

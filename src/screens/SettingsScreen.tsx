@@ -7,6 +7,7 @@ import { BottomTabBar } from '../components/BottomTabBar';
 import { useLibrary } from '../store/library';
 import { useRecording } from '../store/recording';
 import { downloadString, parseGeoJsonRoutes, pickJsonFile, serializeRoutesToGeoJson } from '../utils/geojson';
+import { serializeRoutesToGpx } from '../utils/gpx';
 
 export function SettingsScreen() {
   const navigate = useNavigate();
@@ -42,15 +43,26 @@ export function SettingsScreen() {
     }
   };
 
-  const handleExportAll = () => {
+  const handleExportAll = (format: 'geojson' | 'gpx') => {
     if (routes.length === 0) {
       setImportStatus('Library is empty — nothing to export');
       return;
     }
-    const json = serializeRoutesToGeoJson(routes);
     const stamp = new Date().toISOString().slice(0, 10);
-    downloadString(`trail-router-library-${stamp}.geojson`, 'application/geo+json', json);
-    setImportStatus(`Exported ${routes.length} routes`);
+    if (format === 'geojson') {
+      downloadString(
+        `trail-router-library-${stamp}.geojson`,
+        'application/geo+json',
+        serializeRoutesToGeoJson(routes),
+      );
+    } else {
+      downloadString(
+        `trail-router-library-${stamp}.gpx`,
+        'application/gpx+xml',
+        serializeRoutesToGpx(routes),
+      );
+    }
+    setImportStatus(`Exported ${routes.length} routes as ${format.toUpperCase()}`);
   };
 
   return (
@@ -137,9 +149,15 @@ export function SettingsScreen() {
           />
           <Divider />
           <NavRow
-            label="Export library"
-            sub={`Download all ${routes.length} routes as GeoJSON`}
-            onClick={handleExportAll}
+            label="Export library · GeoJSON"
+            sub={`Download all ${routes.length} routes (Strava, OSM, QGIS, geojson.io)`}
+            onClick={() => handleExportAll('geojson')}
+          />
+          <Divider />
+          <NavRow
+            label="Export library · GPX"
+            sub={`Download all ${routes.length} routes (Garmin, Komoot, Gaia, AllTrails)`}
+            onClick={() => handleExportAll('gpx')}
           />
           <Divider />
           <DangerRow

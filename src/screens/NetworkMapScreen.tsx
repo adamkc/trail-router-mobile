@@ -116,13 +116,33 @@ export function NetworkMapScreen() {
   const [plotMode, setPlotMode] = useState(false);
   const [plotted, setPlotted] = useState<Array<[number, number]>>([]);
 
+  const libraryRoutes = useLibrary((s) => s.routes);
+
   const toggleLayer = (k: LayerKey) => setLayersOn((s) => ({ ...s, [k]: !s[k] }));
   const toggleSnap = (k: SnapKey) => setSnaps((s) => ({ ...s, [k]: !s[k] }));
 
   const onMapTap = useCallback((lng: number, lat: number) => {
     if (!plotMode) return;
-    setPlotted((p) => [...p, [lng, lat]]);
-  }, [plotMode]);
+    let placed: [number, number] = [lng, lat];
+    // JCT snap: if the snap chip is on, look across every visible library
+    // route's vertices for the nearest one within 30m of the tap, and snap
+    // to that. Tiny improvement, big "this feels real" payoff.
+    if (snaps.JCT) {
+      let bestDist = Infinity;
+      let bestCoord: [number, number] | null = null;
+      for (const r of libraryRoutes) {
+        for (const v of r.geo) {
+          const d = haversineKm([lng, lat], v) * 1000;
+          if (d < bestDist) {
+            bestDist = d;
+            bestCoord = v;
+          }
+        }
+      }
+      if (bestCoord && bestDist < 30) placed = bestCoord;
+    }
+    setPlotted((p) => [...p, placed]);
+  }, [plotMode, snaps.JCT, libraryRoutes]);
 
   const movePlottedVertex = useCallback((i: number, lng: number, lat: number) => {
     setPlotted((prev) => {
@@ -157,8 +177,6 @@ export function NetworkMapScreen() {
     for (let i = 1; i < plotted.length; i++) d += haversineKm(plotted[i - 1], plotted[i]);
     return d;
   }, [plotted]);
-
-  const libraryRoutes = useLibrary((s) => s.routes);
 
   // Library routes (saved + recorded) shown on the network map. The seed
   // network demo trails are dropped — library is the source of truth now.

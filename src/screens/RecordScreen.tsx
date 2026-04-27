@@ -6,6 +6,7 @@ import { NavPill } from '../components/NavPill';
 import { Icon } from '../components/Icon';
 import { MapCanvas, useMapInstance } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
+import { MapLongPressHandler } from '../components/MapMarkers';
 import { CompassBadge } from '../components/CompassBadge';
 import { MapToolStack } from '../components/MapToolStack';
 import { ElevChart } from '../components/ElevChart';
@@ -41,6 +42,8 @@ export function RecordScreen() {
   const pushFix      = useRecording((s) => s.pushFix);
   const setGpsState  = useRecording((s) => s.setGpsState);
   const addWaypointOfType = useRecording((s) => s.addWaypointOfType);
+  const addWaypointAt = useRecording((s) => s.addWaypointAt);
+  const [pendingDrop, setPendingDrop] = useState<[number, number] | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
 
   // Auto-start a recording if the user lands here with no active session.
@@ -160,6 +163,16 @@ export function RecordScreen() {
           <FollowUserCamera coord={geoTrack[geoTrack.length - 1] ?? null} active={status === 'recording'} />
           <MapDot coord={geoTrack[0] ?? null} color="oklch(0.74 0.14 145)" outerColor="#12160F" size={14} />
           <MapCursor coord={geoTrack[geoTrack.length - 1] ?? null} pulse={status === 'recording'} />
+          <MapLongPressHandler
+            onLongPress={(lng, lat) => {
+              // Long-press anywhere on the map drops a waypoint at that
+              // coord (after the user picks a type from the picker), not
+              // at the live GPS fix. Useful for marking hazards/water seen
+              // at distance, or noting points before reaching them.
+              setPendingDrop([lng, lat]);
+              setPickerOpen(true);
+            }}
+          />
           <MapToolStack top={140} />
         </MapCanvas>
       </div>
@@ -463,30 +476,38 @@ export function RecordScreen() {
         </button>
       </div>
 
-      {/* Waypoint type picker modal */}
+      {/* Waypoint type picker modal — fires either at the live GPS fix
+          (toolbar +) or at a long-pressed map coord (pendingDrop). */}
       {pickerOpen && (
         <WaypointPicker
+          atCoord={pendingDrop}
           onPick={async (kind) => {
             setPickerOpen(false);
+            const drop = pendingDrop;
+            setPendingDrop(null);
+            const dropAt = (k: WaypointKind, photoId?: string) => {
+              if (drop) addWaypointAt(k, drop, undefined, photoId);
+              else addWaypointOfType(k, undefined, photoId);
+            };
             if (kind === 'PHOTO') {
               // Open the camera (or photo picker on desktop). On capture we
               // save the blob to IndexedDB and attach the id; on cancel we
-              // still drop a generic photo waypoint at the current position.
+              // still drop a generic photo waypoint at the chosen position.
               try {
                 const blob = await pickCameraPhoto();
                 if (blob) {
                   const photoId = newPhotoId();
                   await savePhoto(photoId, blob);
-                  addWaypointOfType('PHOTO', undefined, photoId);
+                  dropAt('PHOTO', photoId);
                   return;
                 }
               } catch {
                 // fall through to plain waypoint
               }
             }
-            addWaypointOfType(kind);
+            dropAt(kind);
           }}
-          onCancel={() => setPickerOpen(false)}
+          onCancel={() => { setPickerOpen(false); setPendingDrop(null); }}
         />
       )}
 
@@ -531,10 +552,17 @@ const gpsBadgeColor = (g: GpsState): string =>
 function WaypointPicker({
   onPick,
   onCancel,
+  atCoord,
 }: {
   onPick: (kind: WaypointKind) => void;
   onCancel: () => void;
+  /** When set, waypoint will drop at this lng/lat instead of the GPS fix.
+   *  Surfaced as a hint in the modal header so the user knows where it'll land. */
+  atCoord?: [number, number] | null;
 }) {
+  const eyebrow = atCoord
+    ? `DROP HERE · ${atCoord[1].toFixed(4)}° ${atCoord[1] >= 0 ? 'N' : 'S'} · ${Math.abs(atCoord[0]).toFixed(4)}° ${atCoord[0] >= 0 ? 'E' : 'W'}`
+    : 'CAPTURE WAYPOINT';
   return (
     <div
       onClick={onCancel}
@@ -562,7 +590,7 @@ function WaypointPicker({
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-          <div className="eyebrow">CAPTURE WAYPOINT</div>
+          <div className="eyebrow" style={{ color: atCoord ? 'var(--blaze)' : undefined }}>{eyebrow}</div>
           <button
             type="button"
             onClick={onCancel}

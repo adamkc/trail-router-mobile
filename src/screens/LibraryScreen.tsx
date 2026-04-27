@@ -180,7 +180,12 @@ export function LibraryScreen() {
 
       {/* Routes list */}
       <div style={{ flex: 1, overflow: 'auto', padding: '0 20px 20px' }}>
-        {ROUTES.length === 0 && (
+        {/* Rich empty state — only when the project has no routes at all
+            (filter active just shows a quiet line). Surfaces the three
+            real ways to make a route so a fresh project doesn't feel dead. */}
+        {projectRoutes.length === 0 ? (
+          <EmptyLibraryState onRecord={() => navigate('/record')} onPlan={() => navigate('/network-map')} onImport={() => navigate('/settings')} />
+        ) : ROUTES.length === 0 ? (
           <div
             style={{
               padding: '32px 12px',
@@ -193,7 +198,7 @@ export function LibraryScreen() {
           >
             {q ? `NO ROUTES MATCH "${search}"` : `NO ${segment} ROUTES`}
           </div>
-        )}
+        ) : null}
         {ROUTES.map((r, i) => (
           <button
             key={r.id}
@@ -325,6 +330,75 @@ export function LibraryScreen() {
         }}
       />
       <NavPill />
+    </div>
+  );
+}
+
+interface EmptyLibraryStateProps {
+  onRecord: () => void;
+  onPlan: () => void;
+  onImport: () => void;
+}
+
+/** Friendly first-launch (or fresh-project) state for the routes list. */
+function EmptyLibraryState({ onRecord, onPlan, onImport }: EmptyLibraryStateProps) {
+  return (
+    <div
+      style={{
+        marginTop: 24,
+        padding: '28px 18px',
+        background: 'var(--surface)',
+        border: '1px solid var(--line-soft)',
+        borderRadius: 18,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        textAlign: 'center',
+        gap: 14,
+      }}
+    >
+      <div
+        style={{
+          width: 56,
+          height: 56,
+          borderRadius: 16,
+          background: 'color-mix(in oklch, var(--blaze) 18%, var(--surface-2))',
+          border: '1px solid color-mix(in oklch, var(--blaze) 40%, transparent)',
+          display: 'grid',
+          placeItems: 'center',
+        }}
+      >
+        <Icon name="route" size={26} color="var(--blaze)" />
+      </div>
+      <div>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 500 }}>
+          No routes yet
+        </div>
+        <div
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            color: 'var(--moss)',
+            letterSpacing: '0.04em',
+            marginTop: 4,
+            maxWidth: 280,
+            lineHeight: 1.5,
+          }}
+        >
+          RECORD A TRAIL WHILE WALKING IT, PLAN ONE BY TAPPING POINTS ON THE MAP, OR IMPORT FROM GEOJSON / GPX.
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', maxWidth: 280 }}>
+        <button type="button" className="btn btn-primary" onClick={onRecord}>
+          <Icon name="record" size={16} color="#1A1208" /> Record a route
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={onPlan}>
+          <Icon name="route" size={16} /> Plan via the network
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={onImport}>
+          <Icon name="download" size={16} /> Import GeoJSON / GPX
+        </button>
+      </div>
     </div>
   );
 }

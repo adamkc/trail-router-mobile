@@ -111,6 +111,86 @@ export function MapClickHandler({ onTap }: { onTap: (lng: number, lat: number) =
   return null;
 }
 
+/**
+ * Long-press / right-click handler for the parent map. Fires after
+ * `holdMs` of finger contact (default 500 ms) without significant
+ * movement. Maps to `contextmenu` on desktop (right-click) so dev/QA
+ * can exercise the same code path.
+ *
+ * Used by Record + the field workflow to drop a custom waypoint at
+ * any tapped location, not just at the live GPS fix.
+ */
+export function MapLongPressHandler({
+  onLongPress,
+  holdMs = 500,
+}: {
+  onLongPress: (lng: number, lat: number) => void;
+  holdMs?: number;
+}) {
+  const { map, styleLoaded } = useMapInstance();
+  const onLongPressRef = useRef(onLongPress);
+  onLongPressRef.current = onLongPress;
+
+  useEffect(() => {
+    if (!map || !styleLoaded) return;
+
+    let timeout: number | null = null;
+    let startPx: { x: number; y: number } | null = null;
+
+    const cancel = () => {
+      if (timeout != null) {
+        window.clearTimeout(timeout);
+        timeout = null;
+      }
+      startPx = null;
+    };
+
+    const onTouchStart = (e: maplibregl.MapTouchEvent) => {
+      // Only single-finger long-presses count; pinch-zoom etc. are not long-press.
+      if (e.points.length !== 1) {
+        cancel();
+        return;
+      }
+      const p = e.points[0];
+      startPx = { x: p.x, y: p.y };
+      const lngLat = e.lngLat;
+      timeout = window.setTimeout(() => {
+        onLongPressRef.current(lngLat.lng, lngLat.lat);
+        timeout = null;
+        startPx = null;
+      }, holdMs);
+    };
+    const onTouchMove = (e: maplibregl.MapTouchEvent) => {
+      if (!startPx || timeout == null) return;
+      const p = e.points[0];
+      // ~10px tolerance — anything more is a pan, not a press.
+      if (Math.abs(p.x - startPx.x) > 10 || Math.abs(p.y - startPx.y) > 10) cancel();
+    };
+    const onTouchEnd = () => cancel();
+    const onContextMenu = (e: maplibregl.MapMouseEvent) => {
+      // Desktop right-click → treat as long press.
+      e.preventDefault();
+      onLongPressRef.current(e.lngLat.lng, e.lngLat.lat);
+    };
+
+    map.on('touchstart', onTouchStart);
+    map.on('touchmove', onTouchMove);
+    map.on('touchend', onTouchEnd);
+    map.on('touchcancel', onTouchEnd);
+    map.on('contextmenu', onContextMenu);
+    return () => {
+      cancel();
+      map.off('touchstart', onTouchStart);
+      map.off('touchmove', onTouchMove);
+      map.off('touchend', onTouchEnd);
+      map.off('touchcancel', onTouchEnd);
+      map.off('contextmenu', onContextMenu);
+    };
+  }, [map, styleLoaded, holdMs]);
+
+  return null;
+}
+
 /** Plain text label anchored to lng/lat — used for trail names on the network map. */
 export function MapLabel({
   coord,

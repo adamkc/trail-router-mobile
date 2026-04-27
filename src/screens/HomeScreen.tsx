@@ -352,6 +352,29 @@ export function HomeScreen() {
           </button>
         </div>
         <div style={{ display: 'flex', gap: 8, overflowX: 'auto', padding: '0 20px' }}>
+          {recents.length === 0 && (
+            <button
+              type="button"
+              onClick={() => navigate('/library')}
+              style={{
+                flexShrink: 0,
+                width: '100%',
+                padding: '14px 18px',
+                borderRadius: 12,
+                background: 'color-mix(in oklch, var(--surface) 88%, transparent)',
+                border: '1px dashed color-mix(in oklch, var(--blaze) 50%, var(--line-soft))',
+                backdropFilter: 'blur(8px)',
+                color: 'var(--bone-dim)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11,
+                letterSpacing: '0.06em',
+                textAlign: 'center',
+                lineHeight: 1.5,
+              }}
+            >
+              NO ROUTES IN <span style={{ color: 'var(--blaze)' }}>{activeProject.name.toUpperCase()}</span> YET — TAP TO GET STARTED →
+            </button>
+          )}
           {recents.map((r, i) => (
             <button
               key={r.id}

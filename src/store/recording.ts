@@ -57,6 +57,9 @@ interface RecordingState {
   /** Capture a waypoint of a given type at the current GPS position.
    *  `photoId` (optional) attaches a previously-saved photo from photoStore. */
   addWaypointOfType: (kind: WaypointKind, label?: string, photoId?: string) => void;
+  /** Drop a waypoint at an explicit [lng, lat] (used by long-press on the
+   *  map). Bypasses the GPS-fix fallback in addWaypointOfType. */
+  addWaypointAt: (kind: WaypointKind, coord: [number, number], label?: string, photoId?: string) => void;
   addWaypoint: () => void;
   stop: () => void;
   discard: () => void;
@@ -178,6 +181,22 @@ export const useRecording = create<RecordingState>((set) => ({
         label: label?.trim() || template.label,
         t: formatT(s.elapsed),
         coord: at,
+        photoId,
+      };
+      return { capturedWaypoints: [...s.capturedWaypoints, next] };
+    }),
+
+  addWaypointAt: (kind, coord, label, photoId) =>
+    set((s) => {
+      const template = WAYPOINT_TYPES.find((t) => t.kind === kind) ?? WAYPOINT_TYPES[0];
+      const next: CapturedWaypoint = {
+        id: `wp-${s.capturedWaypoints.length + 1}`,
+        type: template.kind,
+        icon: template.icon,
+        color: template.color,
+        label: label?.trim() || template.label,
+        t: formatT(s.elapsed),
+        coord,
         photoId,
       };
       return { capturedWaypoints: [...s.capturedWaypoints, next] };

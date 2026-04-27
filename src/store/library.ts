@@ -98,6 +98,10 @@ interface LibraryState {
   removeRoute: (id: string) => void;
   /** Replace the entire route list (used when importing the Hayfork project). */
   replaceLibrary: (routes: LibraryRoute[]) => void;
+  /** Update a waypoint's label in place (no-op if id missing or label blank). */
+  renameWaypoint: (routeId: string, waypointId: string, label: string) => void;
+  /** Drop a waypoint from a route; deletes any attached photo from IDB. */
+  removeWaypoint: (routeId: string, waypointId: string) => void;
 }
 
 /** Stable hash → seeded PRNG so each named route always gets the same shape. */
@@ -187,6 +191,36 @@ export const useLibrary = create<LibraryState>()(
       },
       replaceLibrary: (routes) => {
         set({ routes });
+      },
+      renameWaypoint: (routeId, waypointId, label) => {
+        const trimmed = label.trim();
+        if (!trimmed) return;
+        set((s) => ({
+          routes: s.routes.map((r) => {
+            if (r.id !== routeId) return r;
+            return {
+              ...r,
+              waypoints: r.waypoints.map((w) =>
+                w.id === waypointId ? { ...w, label: trimmed } : w,
+              ),
+            };
+          }),
+        }));
+      },
+      removeWaypoint: (routeId, waypointId) => {
+        // Surface the photoId before mutating state so we can clean its blob.
+        const route = useLibrary.getState().routes.find((r) => r.id === routeId);
+        const wp = route?.waypoints.find((w) => w.id === waypointId);
+        if (wp?.photoId) {
+          import('../utils/photoStore').then(({ deletePhoto }) => deletePhoto(wp.photoId!)).catch(() => {});
+        }
+        set((s) => ({
+          routes: s.routes.map((r) =>
+            r.id === routeId
+              ? { ...r, waypoints: r.waypoints.filter((w) => w.id !== waypointId) }
+              : r,
+          ),
+        }));
       },
     }),
     {

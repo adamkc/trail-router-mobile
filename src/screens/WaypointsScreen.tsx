@@ -27,7 +27,10 @@ export function WaypointsScreen() {
 
   const [filter, setFilter] = useState<WaypointFilter>('ALL');
   const [openPhotoWp, setOpenPhotoWp] = useState<string | null>(null);
+  const [openMenuWp, setOpenMenuWp] = useState<string | null>(null);
   const activeProject = useActiveProject();
+  const renameWaypoint = useLibrary((s) => s.renameWaypoint);
+  const removeWaypoint = useLibrary((s) => s.removeWaypoint);
 
   if (!route) {
     return <div className="screen"><StatusBar /><NavPill /></div>;
@@ -179,67 +182,126 @@ export function WaypointsScreen() {
               ? 'NO WAYPOINTS · CAPTURE SOME WHILE RECORDING'
               : `NO ${filter} WAYPOINTS`}
           </div>
-        ) : visibleWaypoints.map((w) => (
+        ) : visibleWaypoints.map((w) => {
+          const menuOpen = openMenuWp === w.id;
+          return (
           <div
             key={w.id}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              padding: 12,
               background: 'var(--surface)',
               border: '1px solid var(--line-soft)',
               borderRadius: 14,
               marginBottom: 8,
+              overflow: 'hidden',
             }}
           >
             <div
               style={{
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                background: 'var(--surface-2)',
-                border: `1.5px solid ${w.color}`,
-                display: 'grid',
-                placeItems: 'center',
-                fontFamily: 'var(--font-mono)',
-                fontSize: 12,
-                fontWeight: 700,
-                color: w.color,
-                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: 12,
               }}
             >
-              {w.icon}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 500 }}>
-                {w.label}
-              </div>
               <div
                 style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  background: 'var(--surface-2)',
+                  border: `1.5px solid ${w.color}`,
+                  display: 'grid',
+                  placeItems: 'center',
                   fontFamily: 'var(--font-mono)',
-                  fontSize: 10,
-                  color: 'var(--moss)',
-                  letterSpacing: '0.06em',
-                  marginTop: 2,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: w.color,
+                  flexShrink: 0,
                 }}
               >
-                {w.type} · CAPTURED {w.t}
+                {w.icon}
               </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 500 }}>
+                  {w.label}
+                </div>
+                <div
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 10,
+                    color: 'var(--moss)',
+                    letterSpacing: '0.06em',
+                    marginTop: 2,
+                  }}
+                >
+                  {w.type} · CAPTURED {w.t} · {w.distKm.toFixed(1)} km
+                </div>
+              </div>
+              {w.photoId && (
+                <WaypointPhoto
+                  photoId={w.photoId}
+                  size={44}
+                  alt={w.label}
+                  onClick={() => setOpenPhotoWp(w.id)}
+                />
+              )}
+              <button
+                type="button"
+                onClick={() => setOpenMenuWp(menuOpen ? null : w.id)}
+                aria-label={menuOpen ? 'Close waypoint menu' : 'Waypoint menu'}
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  background: menuOpen ? 'var(--surface-2)' : 'transparent',
+                  display: 'grid',
+                  placeItems: 'center',
+                  color: 'var(--moss)',
+                }}
+              >
+                <Icon name="more" size={16} />
+              </button>
             </div>
-            {w.photoId && (
-              <WaypointPhoto
-                photoId={w.photoId}
-                size={44}
-                alt={w.label}
-                onClick={() => setOpenPhotoWp(w.id)}
-              />
+            {menuOpen && (
+              <div
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  padding: '0 12px 12px',
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ flex: 1 }}
+                  onClick={() => {
+                    const next = window.prompt('Rename waypoint:', w.label);
+                    if (next && next.trim() && next.trim() !== w.label) {
+                      renameWaypoint(route.id, w.id, next);
+                    }
+                    setOpenMenuWp(null);
+                  }}
+                >
+                  <Icon name="edit" size={14} /> Rename
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ flex: 1, color: 'var(--danger)' }}
+                  onClick={() => {
+                    if (confirm(`Delete waypoint "${w.label}"?`)) {
+                      removeWaypoint(route.id, w.id);
+                    }
+                    setOpenMenuWp(null);
+                  }}
+                >
+                  <Icon name="close" size={14} color="var(--danger)" /> Delete
+                </button>
+              </div>
             )}
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--bone-dim)' }}>
-              {w.distKm.toFixed(1)} km
-            </div>
           </div>
-        ))}
+          );
+        })}
       </div>
       {(() => {
         const w = openPhotoWp ? waypointsWithDist.find((x) => x.id === openPhotoWp) : null;

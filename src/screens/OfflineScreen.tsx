@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
 import { Icon } from '../components/Icon';
 import { BottomTabBar } from '../components/BottomTabBar';
 import { useLibrary } from '../store/library';
-import { useProjects } from '../store/projects';
+import { useProjects, type Project } from '../store/projects';
 import { usePreferences } from '../store/preferences';
+import { estimateTileCount, precacheBounds, type PrecacheProgress } from '../utils/tileCache';
 
 interface StorageEstimate {
   usage?: number;
@@ -40,6 +41,61 @@ export function OfflineScreen() {
   const usagePct = estimate?.usage && estimate?.quota
     ? Math.min(100, (estimate.usage / estimate.quota) * 100)
     : 0;
+
+  // Per-project tile-precache state. The active job is keyed by project id
+  // so the user can see which project is being cached; abort tracked via ref.
+  const [activeJob, setActiveJob] = useState<{
+    projectId: string;
+    progress: PrecacheProgress;
+  } | null>(null);
+  const [tileCounts, setTileCounts] = useState<Record<string, number>>({});
+  const abortRef = useRef<AbortController | null>(null);
+
+  // Estimate tile counts for each project (one-shot per mount). Cheap —
+  // just bbox-grid arithmetic, no network beyond the one style.json fetch.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const next: Record<string, number> = {};
+      for (const p of projects) {
+        try {
+          next[p.id] = await estimateTileCount(p.bounds, [12, 13, 14, 15]);
+        } catch {
+          next[p.id] = 0;
+        }
+      }
+      if (!cancelled) setTileCounts(next);
+    })();
+    return () => { cancelled = true; };
+  }, [projects]);
+
+  const startPrecache = (project: Project) => {
+    if (activeJob) return; // single-job at a time
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    const initial: PrecacheProgress = { done: 0, total: tileCounts[project.id] ?? 0, ok: 0, failed: 0 };
+    setActiveJob({ projectId: project.id, progress: initial });
+    precacheBounds(
+      project.bounds,
+      [12, 13, 14, 15],
+      (p) => setActiveJob({ projectId: project.id, progress: p }),
+      ctrl.signal,
+    )
+      .then((final) => {
+        setActiveJob({ projectId: project.id, progress: final });
+        // Refresh storage estimate so the bar reflects the new bytes.
+        navigator.storage?.estimate?.().then(setEstimate).catch(() => {});
+        // Auto-clear the "done" badge after a couple seconds.
+        window.setTimeout(() => setActiveJob(null), 4000);
+      })
+      .catch(() => setActiveJob(null));
+  };
+  const cancelPrecache = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setActiveJob(null);
+  };
 
   return (
     <div className="screen">
@@ -137,10 +193,16 @@ export function OfflineScreen() {
           const projectRouteCount = allRoutes.filter((r) => r.projectId === p.id).length;
           const isBundled = p.id === 'hayfork';
           const accent = isBundled ? 'var(--blaze)' : 'var(--bone)';
+          const tileCount = tileCounts[p.id] ?? null;
+          const isJobActive = activeJob?.projectId === p.id;
+          const jobProgress = isJobActive ? activeJob.progress : null;
+          const jobPct = jobProgress && jobProgress.total > 0
+            ? (jobProgress.done / jobProgress.total) * 100
+            : 0;
+          const isJobDone = isJobActive && jobProgress && jobProgress.done === jobProgress.total && jobProgress.total > 0;
           const assets: string[] = [];
           assets.push(`${projectRouteCount} TRAIL${projectRouteCount === 1 ? '' : 'S'} ✓`);
           if (p.hasHillshade) assets.push('HILLSHADE ✓');
-          assets.push('TILES (CACHED)');
           return (
             <div
               key={p.id}
@@ -180,17 +242,84 @@ export function OfflineScreen() {
                     style={{
                       fontFamily: 'var(--font-mono)',
                       fontSize: 10,
-                      color: isBundled ? 'var(--good)' : 'var(--moss)',
+                      color: isJobActive
+                        ? 'var(--blaze)'
+                        : isBundled ? 'var(--good)' : 'var(--moss)',
                       letterSpacing: '0.08em',
                       marginTop: 2,
                     }}
                   >
-                    {isBundled
+                    {isJobActive && jobProgress
+                      ? isJobDone
+                        ? `● CACHED ${jobProgress.ok} TILES${jobProgress.failed ? ` · ${jobProgress.failed} FAILED` : ''}`
+                        : `● CACHING TILES · ${jobProgress.done}/${jobProgress.total} (${jobPct.toFixed(0)}%)`
+                      : isBundled
                       ? '● READY OFFLINE · BUNDLED'
                       : `● LOCAL ONLY · ${projectRouteCount} ROUTE${projectRouteCount === 1 ? '' : 'S'}`}
                   </div>
                 </div>
+                {/* Cache button — disabled while a different project's job is
+                    running. Cancel button takes its place during this project's job. */}
+                {isJobActive && !isJobDone ? (
+                  <button
+                    type="button"
+                    onClick={cancelPrecache}
+                    aria-label="Cancel cache"
+                    style={{
+                      padding: '7px 12px',
+                      borderRadius: 10,
+                      background: 'var(--surface-2)',
+                      border: '1px solid color-mix(in oklch, var(--danger) 40%, transparent)',
+                      color: 'var(--danger)',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 10,
+                      letterSpacing: '0.1em',
+                    }}
+                  >
+                    CANCEL
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => startPrecache(p)}
+                    disabled={!!activeJob && !isJobActive}
+                    aria-label="Cache tiles for this project"
+                    style={{
+                      padding: '7px 12px',
+                      borderRadius: 10,
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--line-soft)',
+                      color: 'var(--bone)',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: 10,
+                      letterSpacing: '0.1em',
+                      opacity: !!activeJob && !isJobActive ? 0.4 : 1,
+                    }}
+                  >
+                    {tileCount != null ? `CACHE ${tileCount}` : 'CACHE TILES'}
+                  </button>
+                )}
               </div>
+              {isJobActive && jobProgress && jobProgress.total > 0 && (
+                <div
+                  style={{
+                    height: 4,
+                    borderRadius: 2,
+                    background: 'var(--surface-2)',
+                    overflow: 'hidden',
+                    marginTop: 10,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${jobPct.toFixed(2)}%`,
+                      height: '100%',
+                      background: isJobDone ? 'var(--good)' : 'var(--blaze)',
+                      transition: 'width 200ms ease',
+                    }}
+                  />
+                </div>
+              )}
               <div
                 style={{
                   display: 'flex',

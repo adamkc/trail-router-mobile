@@ -7,6 +7,7 @@ import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
 import { MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers';
 import { WaypointPhoto } from '../components/WaypointPhoto';
+import { PhotoLightbox } from '../components/PhotoLightbox';
 import { resolveCssVar } from '../utils/geo';
 import { useActiveProject } from '../store/projects';
 import { useLibrary } from '../store/library';
@@ -25,6 +26,7 @@ export function WaypointsScreen() {
   );
 
   const [filter, setFilter] = useState<WaypointFilter>('ALL');
+  const [openPhotoWp, setOpenPhotoWp] = useState<string | null>(null);
   const activeProject = useActiveProject();
 
   if (!route) {
@@ -225,13 +227,32 @@ export function WaypointsScreen() {
                 {w.type} · CAPTURED {w.t}
               </div>
             </div>
-            {w.photoId && <WaypointPhoto photoId={w.photoId} size={44} />}
+            {w.photoId && (
+              <WaypointPhoto
+                photoId={w.photoId}
+                size={44}
+                alt={w.label}
+                onClick={() => setOpenPhotoWp(w.id)}
+              />
+            )}
             <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--bone-dim)' }}>
               {w.distKm.toFixed(1)} km
             </div>
           </div>
         ))}
       </div>
+      {(() => {
+        const w = openPhotoWp ? waypointsWithDist.find((x) => x.id === openPhotoWp) : null;
+        return (
+          <PhotoLightbox
+            photoId={w?.photoId ?? null}
+            caption={w?.label}
+            coord={w?.coord}
+            t={w?.t}
+            onClose={() => setOpenPhotoWp(null)}
+          />
+        );
+      })()}
       <NavPill />
     </div>
   );

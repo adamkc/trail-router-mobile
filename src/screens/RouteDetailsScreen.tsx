@@ -11,6 +11,7 @@ import type { ChipTone } from '../components/Chip';
 import { downloadString, serializeRoutesToGeoJson } from '../utils/geojson';
 import { routeChartData } from '../utils/elevation';
 import { WaypointPhoto } from '../components/WaypointPhoto';
+import { PhotoLightbox } from '../components/PhotoLightbox';
 import { useActiveProject } from '../store/projects';
 import { buildNetwork } from '../utils/network';
 
@@ -137,6 +138,7 @@ export function RouteDetailsScreen() {
   }, [projectRoutes, route]);
 
   const photoWaypoints = route.waypoints.filter((w) => w.photoId);
+  const [openPhotoWp, setOpenPhotoWp] = useState<string | null>(null);
 
   return (
     <div className="screen">
@@ -288,7 +290,7 @@ export function RouteDetailsScreen() {
                   photoId={w.photoId!}
                   size={64}
                   alt={w.label}
-                  onClick={() => navigate(`/waypoints/${route.id}`)}
+                  onClick={() => setOpenPhotoWp(w.id)}
                 />
               ))}
             </div>
@@ -485,6 +487,18 @@ export function RouteDetailsScreen() {
           </button>
         </div>
       </div>
+      {(() => {
+        const w = openPhotoWp ? route.waypoints.find((x) => x.id === openPhotoWp) : null;
+        return (
+          <PhotoLightbox
+            photoId={w?.photoId ?? null}
+            caption={w?.label}
+            coord={w?.coord}
+            t={w?.t}
+            onClose={() => setOpenPhotoWp(null)}
+          />
+        );
+      })()}
       <NavPill />
     </div>
   );

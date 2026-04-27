@@ -9,6 +9,7 @@ export { MapHillshade } from './MapHillshade';
 export { MapToolStack } from './MapToolStack';
 export { CompassBadge } from './CompassBadge';
 export { WaypointPhoto } from './WaypointPhoto';
+export { PhotoLightbox } from './PhotoLightbox';
 export { MapPin, MapWaypoint, MapJunction, MapActiveVertex, MapDraggableVertex, MapLabel, MapClickHandler, FitBoundsToCoords } from './MapMarkers';
 export { TrailLine } from './TrailLine';
 export { ElevChart } from './ElevChart';

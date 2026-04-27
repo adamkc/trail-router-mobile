@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
@@ -9,6 +9,7 @@ import { MapPin, MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers
 import { MapToolStack } from '../components/MapToolStack';
 import { ElevChart } from '../components/ElevChart';
 import { WaypointPhoto } from '../components/WaypointPhoto';
+import { PhotoLightbox } from '../components/PhotoLightbox';
 import { resolveCssVar } from '../utils/geo';
 import { routeChartData } from '../utils/elevation';
 import { useLibrary } from '../store/library';
@@ -43,6 +44,7 @@ export function MapViewerScreen() {
   const start = trailGeo[0];
   const end = trailGeo[trailGeo.length - 1];
   const accent = tagToCssColor(route.tag);
+  const [openPhotoWp, setOpenPhotoWp] = useState<string | null>(null);
   // Anchor camera + hillshade to whichever project owns this route. Falls
   // back to the active project's center if a route somehow lacks geo.
   const cameraCenter = trailGeo[0] ?? activeProject.center;
@@ -217,7 +219,7 @@ export function MapViewerScreen() {
                   photoId={w.photoId!}
                   size={48}
                   alt={w.label}
-                  onClick={() => navigate(`/waypoints/${route.id}`)}
+                  onClick={() => setOpenPhotoWp(w.id)}
                 />
               ))}
           </div>
@@ -235,6 +237,18 @@ export function MapViewerScreen() {
           </button>
         </div>
       </div>
+      {(() => {
+        const w = openPhotoWp ? route.waypoints.find((x) => x.id === openPhotoWp) : null;
+        return (
+          <PhotoLightbox
+            photoId={w?.photoId ?? null}
+            caption={w?.label}
+            coord={w?.coord}
+            t={w?.t}
+            onClose={() => setOpenPhotoWp(null)}
+          />
+        );
+      })()}
       <NavPill />
     </div>
   );

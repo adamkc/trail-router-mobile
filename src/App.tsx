@@ -82,7 +82,10 @@ function ScreenFrame({ entry }: { entry: (typeof SCREENS)[number] }) {
     return (
       <div
         style={{
-          minHeight: '100dvh',
+          // `height` (not `min-height`) so .screen's flex:1 has an explicit
+          // parent height to fill — otherwise pages collapsed to content
+          // size and left the body bg showing below.
+          height: '100dvh',
           width: '100vw',
           background: 'var(--bg)',
           display: 'flex',

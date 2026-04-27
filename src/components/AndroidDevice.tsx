@@ -33,7 +33,21 @@ export function AndroidDevice({ children, width = 392, height = 820, dark = true
         ...style,
       }}
     >
-      <div style={{ flex: 1, overflow: 'auto', position: 'relative' }}>{children}</div>
+      {/* Inner viewport. `display: flex; flex-direction: column` so the child
+          .screen's `flex: 1` fills this area (otherwise it collapses to
+          content size). `min-height: 0` lets it shrink inside the bezel. */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: 'auto',
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }

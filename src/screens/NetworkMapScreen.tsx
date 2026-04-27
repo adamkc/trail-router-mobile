@@ -10,11 +10,11 @@ import { MapToolStack } from '../components/MapToolStack';
 import {
   MapPin,
   MapJunction,
-  MapLabel,
   MapDraggableVertex,
   MapClickHandler,
   FitBoundsToCoords,
 } from '../components/MapMarkers';
+import { MapTrailLabels } from '../components/MapTrailLabels';
 import { svgArrayToGeo, svgToGeo, resolveCssVar } from '../utils/geo';
 import { useLibrary, type LibraryRoute } from '../store/library';
 import { useActiveProject } from '../store/projects';
@@ -340,19 +340,9 @@ export function NetworkMapScreen() {
               />
             );
           })}
-          {/* Tag each route with a small mono label at its midpoint */}
-          {visibleLibraryRoutes.map((r) => {
-            const mid = r.geo[Math.floor(r.geo.length / 2)];
-            return (
-              <MapLabel
-                key={`label-${r.id}`}
-                coord={mid}
-                text={r.name.toUpperCase()}
-                color={r.lineColor}
-                offset={[0, -10]}
-              />
-            );
-          })}
+          {/* Trail-name labels — one symbol layer with collision avoidance
+              and zoom gating (hidden below z12, full size at z15+). */}
+          <MapTrailLabels trails={visibleLibraryRoutes.map((r) => ({ id: r.id, name: r.name, geo: r.geo, color: r.lineColor }))} />
           <MapPin coord={geoTrailhead} background={resolveCssVar('var(--good)')}   size={14} />
           <MapPin coord={geoPeak}      background={resolveCssVar('var(--danger)')} size={14} />
 

@@ -7,6 +7,7 @@ export { MapGeoLine } from './MapGeoLine';
 export { MapGradeLine } from './MapGradeLine';
 export { MapHillshade } from './MapHillshade';
 export { MapToolStack } from './MapToolStack';
+export { MapTrailLabels } from './MapTrailLabels';
 export { CompassBadge } from './CompassBadge';
 export { WaypointPhoto } from './WaypointPhoto';
 export { PhotoLightbox } from './PhotoLightbox';

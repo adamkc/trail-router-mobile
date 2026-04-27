@@ -63,6 +63,18 @@ input, textarea, select { font: inherit; color: inherit; }
 }
 .screen ::-webkit-scrollbar { width: 0; height: 0; }
 
+/* Direct flex children inside .screen (which is flex-column) need min-height:0
+   to honor flex distribution on mobile WebKit. The default min-height:auto
+   makes flex items size to their min-content, which lets a tall scroll-content
+   div or bottom dock "win" the column layout and shrink the map area to
+   half-screen or smaller. Affects every map screen since they wrap MapCanvas
+   in a `flex: 1` div. Fixed-size children (StatusBar, NavPill, docks) ignore
+   this because they don't claim flex: 1 in the first place. */
+.screen > * {
+  min-height: 0;
+  min-width: 0;
+}
+
 /* Custom status bar (time + mono icons, overrides device-frame Roboto one) */
 .statusbar {
   height: 36px;

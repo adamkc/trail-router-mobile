@@ -37,6 +37,8 @@ interface ProjectsState {
    *  re-import can update metadata without orphaning routes). */
   addProject: (p: Project) => void;
   removeProject: (id: string) => void;
+  /** Rename a project in place. No-op if id missing or name blank. */
+  renameProject: (id: string, name: string, subtitle?: string) => void;
 }
 
 export const useProjects = create<ProjectsState>()(
@@ -63,6 +65,20 @@ export const useProjects = create<ProjectsState>()(
           const activeProjectId =
             s.activeProjectId === id ? HAYFORK_PROJECT.id : s.activeProjectId;
           return { projects, activeProjectId };
+        }),
+      renameProject: (id, name, subtitle) =>
+        set((s) => {
+          const trimmed = name.trim();
+          if (!trimmed) return s;
+          const idx = s.projects.findIndex((p) => p.id === id);
+          if (idx === -1) return s;
+          const next = s.projects.slice();
+          next[idx] = {
+            ...next[idx],
+            name: trimmed,
+            ...(subtitle !== undefined ? { subtitle: subtitle.trim() || next[idx].subtitle } : {}),
+          };
+          return { projects: next };
         }),
     }),
     {

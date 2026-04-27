@@ -26,10 +26,21 @@ export function SettingsScreen() {
   const activeProject = useActiveProject();
   const projects = useProjects((s) => s.projects);
   const removeProject = useProjects((s) => s.removeProject);
+  const renameProject = useProjects((s) => s.renameProject);
   const setActive = useProjects((s) => s.setActive);
   const projectRoutes = routes.filter((r) => r.projectId === activeProject.id);
 
   const canDeleteActive = activeProject.id !== 'hayfork';
+
+  const handleRenameActiveProject = () => {
+    const next = window.prompt(
+      `Rename project "${activeProject.name}":`,
+      activeProject.name,
+    );
+    if (!next || next.trim() === '' || next.trim() === activeProject.name) return;
+    const sub = window.prompt('Subtitle (optional):', activeProject.subtitle) ?? undefined;
+    renameProject(activeProject.id, next, sub);
+  };
   const handleDeleteActiveProject = () => {
     if (!canDeleteActive) return;
     if (!confirm(
@@ -234,6 +245,12 @@ export function SettingsScreen() {
             label="Reload Hayfork data"
             sub="Replace the library with fresh trails from the bundled GeoJSON"
             onClick={handleReloadHayfork}
+          />
+          <Divider />
+          <NavRow
+            label={`Rename "${activeProject.name}"`}
+            sub="Edit the active project's display name + subtitle"
+            onClick={handleRenameActiveProject}
           />
           {canDeleteActive && (
             <>

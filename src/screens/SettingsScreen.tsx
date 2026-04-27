@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
@@ -18,6 +18,14 @@ import {
 import { parseGpxRoutes, serializeRoutesToGpx } from '../utils/gpx';
 import { deleteHillshade, pickImageFile, saveHillshade } from '../utils/photoStore';
 import { exportBackup, formatSize, restoreBackup } from '../utils/backup';
+import {
+  disableSync,
+  getSyncFolderName,
+  isSyncSupported,
+  pickSyncFolder,
+  readSyncBackup,
+  writeSyncBackup,
+} from '../utils/syncFolder';
 import { backfillElevations, loadHayforkProject } from '../utils/hayforkData';
 
 export function SettingsScreen() {
@@ -116,6 +124,70 @@ export function SettingsScreen() {
   const [haptics, setHaptics] = useState(true);
   const [highAccuracy, setHighAccuracy] = useState(true);
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  const autoSyncEnabled = usePreferences((s) => s.autoSyncEnabled);
+  const setAutoSyncEnabled = usePreferences((s) => s.setAutoSyncEnabled);
+  const lastSyncedAt = usePreferences((s) => s.lastSyncedAt);
+  const setLastSyncedAt = usePreferences((s) => s.setLastSyncedAt);
+  const [syncFolder, setSyncFolder] = useState<string | null>(null);
+  const syncSupported = isSyncSupported();
+
+  // Hydrate the saved folder name on mount so the Settings row reflects
+  // reality without forcing the user to re-pick.
+  useEffect(() => {
+    if (!syncSupported) return;
+    getSyncFolderName().then(setSyncFolder).catch(() => setSyncFolder(null));
+  }, [syncSupported]);
+
+  const handlePickSyncFolder = async () => {
+    setImportStatus(null);
+    try {
+      const name = await pickSyncFolder();
+      if (!name) return; // user cancelled
+      setSyncFolder(name);
+      setAutoSyncEnabled(true);
+      setLastSyncedAt(Date.now());
+      setImportStatus(`Auto-sync enabled — backup will write to "${name}" on every change.`);
+    } catch (e) {
+      setImportStatus(`Sync folder pick failed: ${(e as Error).message}`);
+    }
+  };
+  const handleSyncNow = async () => {
+    setImportStatus(null);
+    try {
+      const result = await writeSyncBackup();
+      if (!result) {
+        setImportStatus('Sync failed — folder permission denied or no folder picked.');
+        return;
+      }
+      setLastSyncedAt(Date.now());
+      setImportStatus(`Wrote ${formatSize(result.sizeBytes)} to "${result.folder}".`);
+    } catch (e) {
+      setImportStatus(`Sync failed: ${(e as Error).message}`);
+    }
+  };
+  const handleRestoreFromSyncFolder = async () => {
+    setImportStatus(null);
+    if (!confirm('Restore from the sync folder? This REPLACES all current data with the folder copy.')) return;
+    try {
+      const summary = await readSyncBackup();
+      if (!summary) {
+        setImportStatus('No backup found in the sync folder.');
+        return;
+      }
+      setImportStatus(
+        `Restored ${summary.projects} projects · ${summary.routes} routes · ${summary.visits} visits · ${summary.blobs} photos/hillshades from sync folder`,
+      );
+    } catch (e) {
+      setImportStatus(`Restore failed: ${(e as Error).message}`);
+    }
+  };
+  const handleDisableSync = async () => {
+    await disableSync();
+    setSyncFolder(null);
+    setAutoSyncEnabled(false);
+    setLastSyncedAt(null);
+    setImportStatus('Auto-sync disabled.');
+  };
 
   const handleClearLibrary = () => {
     if (!confirm(`Clear all ${routes.length} saved routes? This can't be undone.`)) return;
@@ -390,6 +462,68 @@ export function SettingsScreen() {
             onClick={handleBackupRestore}
           />
         </Card>
+
+        {/* Section: Auto-sync — Chrome/Edge only. Pick a folder once, app
+            writes backup JSON on every change. Drop folder in iCloud Drive /
+            Dropbox / OneDrive for free cross-device sync via the user's
+            existing cloud. */}
+        {syncSupported ? (
+          <>
+            <SectionLabel>AUTO-SYNC</SectionLabel>
+            <Card>
+              {syncFolder ? (
+                <>
+                  <ToggleRow
+                    label={`Auto-sync to "${syncFolder}"`}
+                    sub={
+                      autoSyncEnabled
+                        ? lastSyncedAt
+                          ? `Last write ${formatRelativeAgo(lastSyncedAt)} · drop folder in iCloud / Dropbox to sync devices`
+                          : 'Writing on every change — drop folder in iCloud / Dropbox to sync devices'
+                        : 'Folder picked but auto-write is paused'
+                    }
+                    on={autoSyncEnabled}
+                    onToggle={() => setAutoSyncEnabled(!autoSyncEnabled)}
+                  />
+                  <Divider />
+                  <NavRow
+                    label="Sync now"
+                    sub="Force-write the current backup to the folder"
+                    onClick={handleSyncNow}
+                  />
+                  <Divider />
+                  <NavRow
+                    label="Restore from sync folder"
+                    sub="Replace local data with the folder's backup (e.g. on a fresh device)"
+                    onClick={handleRestoreFromSyncFolder}
+                  />
+                  <Divider />
+                  <DangerRow
+                    label="Disable auto-sync"
+                    sub="Forgets the folder; existing backups stay where they are"
+                    onClick={handleDisableSync}
+                  />
+                </>
+              ) : (
+                <NavRow
+                  label="Pick a folder to auto-sync…"
+                  sub="App writes a backup JSON on every change. Drop the folder in iCloud / Dropbox / OneDrive for free cross-device sync. No server, no account."
+                  onClick={handlePickSyncFolder}
+                />
+              )}
+            </Card>
+          </>
+        ) : (
+          <>
+            <SectionLabel>AUTO-SYNC</SectionLabel>
+            <Card>
+              <ReadOnlyRow
+                label="Auto-sync"
+                value="Chrome / Edge only"
+              />
+            </Card>
+          </>
+        )}
         {importStatus && (
           <div
             style={{
@@ -671,4 +805,16 @@ function DangerRow({ label, sub, onClick }: { label: string; sub?: string; onCli
       <Icon name="chevron-right" size={16} color="var(--danger)" />
     </button>
   );
+}
+
+function formatRelativeAgo(epoch: number): string {
+  const ageMs = Date.now() - epoch;
+  const sec = Math.floor(ageMs / 1000);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  return `${day}d ago`;
 }

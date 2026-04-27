@@ -11,7 +11,10 @@ import { OptimizerScreen } from './screens/OptimizerScreen';
 import { useIsMobile } from './hooks/useIsMobile';
 import { useLibrary } from './store/library';
 import { usePreferences } from './store/preferences';
+import { useProjects } from './store/projects';
+import { useVisits } from './store/visits';
 import { backfillElevations, loadHayforkProject } from './utils/hayforkData';
+import { writeSyncBackup } from './utils/syncFolder';
 
 /** IDs of the procedural seed routes baked into the library store. The
  *  auto-import only fires when the user's library is still exactly these. */
@@ -71,6 +74,46 @@ function useHayforkAutoImport() {
       }
     })();
   }, []);
+}
+
+/**
+ * When auto-sync is enabled, debounce-write the backup JSON to the picked
+ * sync folder on every state change across the four persisted stores. The
+ * debounce coalesces rapid bursts (a recording session pushing GPS fixes
+ * dozens of times a minute) into one write per 2 s of quiet.
+ *
+ * Quietly no-ops if the folder permission has expired or the user
+ * disabled auto-sync — the Settings screen surfaces those states.
+ */
+function useAutoSync() {
+  const autoSyncEnabled = usePreferences((s) => s.autoSyncEnabled);
+  const setLastSyncedAt = usePreferences((s) => s.setLastSyncedAt);
+  useEffect(() => {
+    if (!autoSyncEnabled) return;
+    let timer: number | null = null;
+    let cancelled = false;
+    const schedule = () => {
+      if (timer != null) window.clearTimeout(timer);
+      timer = window.setTimeout(async () => {
+        if (cancelled) return;
+        const result = await writeSyncBackup().catch(() => null);
+        if (!cancelled && result) setLastSyncedAt(Date.now());
+      }, 2000);
+    };
+    const unsubs = [
+      useLibrary.subscribe(schedule),
+      useProjects.subscribe(schedule),
+      useVisits.subscribe(schedule),
+    ];
+    // Schedule one immediately on enable so the file appears even if no
+    // store changes come through right away.
+    schedule();
+    return () => {
+      cancelled = true;
+      if (timer != null) window.clearTimeout(timer);
+      for (const u of unsubs) u();
+    };
+  }, [autoSyncEnabled, setLastSyncedAt]);
 }
 
 function ScreenFrame({ entry }: { entry: (typeof SCREENS)[number] }) {
@@ -200,6 +243,7 @@ function NotFound() {
 
 export default function App() {
   useHayforkAutoImport();
+  useAutoSync();
   return (
     <HashRouter>
       <Routes>

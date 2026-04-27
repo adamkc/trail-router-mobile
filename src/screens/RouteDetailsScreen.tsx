@@ -13,6 +13,7 @@ import { routeChartData } from '../utils/elevation';
 import { WaypointPhoto } from '../components/WaypointPhoto';
 import { PhotoLightbox } from '../components/PhotoLightbox';
 import { useActiveProject } from '../store/projects';
+import { selectAllVisits, useVisits } from '../store/visits';
 import { buildNetwork } from '../utils/network';
 import { shareOrCopy, shareUrlForHash } from '../utils/share';
 
@@ -141,6 +142,10 @@ export function RouteDetailsScreen() {
   const photoWaypoints = route.waypoints.filter((w) => w.photoId);
   const [openPhotoWp, setOpenPhotoWp] = useState<string | null>(null);
   const [shareToast, setShareToast] = useState<string | null>(null);
+  // Read the raw visits array and filter in a memo — selectors that return
+  // derived arrays trigger React 18's infinite-loop guard.
+  const allVisits = useVisits(selectAllVisits);
+  const visits = useMemo(() => allVisits.filter((v) => v.routeId === route.id), [allVisits, route.id]);
 
   const handleShare = async () => {
     const url = shareUrlForHash(`/map/${route.id}`);
@@ -275,6 +280,50 @@ export function RouteDetailsScreen() {
             </div>
           ))}
         </div>
+
+        {/* Visits — recording sessions that followed this route. Hidden
+            until the user has hiked it at least once. */}
+        {visits.length > 0 && (
+          <div
+            style={{
+              marginTop: 16,
+              padding: 14,
+              background: 'var(--surface)',
+              borderRadius: 16,
+              border: '1px solid var(--line-soft)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+              <div className="eyebrow">VISITS</div>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--moss)', letterSpacing: '0.08em' }}>
+                {visits.length} TIME{visits.length === 1 ? '' : 'S'} · LAST {formatRelativeAgo(visits[0].recordedAt)}
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {visits.slice(0, 5).map((v) => (
+                <div
+                  key={v.id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'baseline',
+                    padding: '6px 10px',
+                    borderRadius: 8,
+                    background: 'var(--surface-2)',
+                  }}
+                >
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--bone)', letterSpacing: '0.04em' }}>
+                    {new Date(v.recordedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </div>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--moss)', letterSpacing: '0.05em' }}>
+                    {v.distanceKm.toFixed(1)} KM · {Math.floor(v.durationSec / 60)}M · +{v.gainM} M
+                    {v.photoIds.length > 0 && ` · ${v.photoIds.length} 📷`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Photo strip — appears when at least one waypoint has a captured
             photo. Tap a thumbnail to jump to the full waypoint list. */}
@@ -547,4 +596,17 @@ export function RouteDetailsScreen() {
       <NavPill />
     </div>
   );
+}
+
+function formatRelativeAgo(epoch: number): string {
+  const ageMs = Date.now() - epoch;
+  const sec = Math.floor(ageMs / 1000);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 30) return `${day}d ago`;
+  return new Date(epoch).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }

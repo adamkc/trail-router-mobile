@@ -10,6 +10,7 @@ import { ElevChart } from '../components/ElevChart';
 import { useRecording, draftSaveStatusToRoute, type SaveStatus } from '../store/recording';
 import { useLibrary } from '../store/library';
 import { useActiveProject } from '../store/projects';
+import { useVisits } from '../store/visits';
 import { resolveCssVar } from '../utils/geo';
 import { elevationGain, fetchElevations, resampleSpark } from '../utils/elevation';
 
@@ -59,6 +60,9 @@ export function RecordReviewScreen() {
   const discard            = useRecording((s) => s.discard);
   const addRoute           = useLibrary((s) => s.addRoute);
   const activeProject      = useActiveProject();
+  const followingRouteId   = useRecording((s) => s.followingRouteId);
+  const logVisit           = useVisits((s) => s.logVisit);
+  const allRoutes          = useLibrary((s) => s.routes);
 
   // If the user landed here without a recording (e.g. via the canvas), use a synthetic track for fidelity.
   const hasTrack = geoTrack.length >= 3;
@@ -130,8 +134,24 @@ export function RecordReviewScreen() {
         photoId: w.photoId,
       })),
     });
+    // If the user was following an existing route, also log this session as
+    // a visit against it so the trail's detail page shows usage history.
+    if (followingRouteId) {
+      const followed = allRoutes.find((r) => r.id === followingRouteId);
+      if (followed) {
+        logVisit({
+          routeId: followingRouteId,
+          projectId: followed.projectId,
+          recordedAt: Date.now(),
+          distanceKm: displayDistance,
+          durationSec: elapsed,
+          gainM: realGain,
+          photoIds: capturedWaypoints.map((w) => w.photoId).filter(Boolean) as string[],
+        });
+      }
+    }
     discard();
-    navigate('/library');
+    navigate(followingRouteId ? `/details/${followingRouteId}` : '/library');
   };
   const handleBack = () => navigate('/record');
 

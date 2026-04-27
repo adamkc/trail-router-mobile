@@ -43,6 +43,7 @@ export function RecordScreen() {
   const setGpsState  = useRecording((s) => s.setGpsState);
   const addWaypointOfType = useRecording((s) => s.addWaypointOfType);
   const addWaypointAt = useRecording((s) => s.addWaypointAt);
+  const setFollowingRouteId = useRecording((s) => s.setFollowingRouteId);
   const [pendingDrop, setPendingDrop] = useState<[number, number] | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -52,6 +53,12 @@ export function RecordScreen() {
     // Intentionally only runs on mount — subsequent status changes shouldn't re-start.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Track which route we're following (?follow=<id>) so RecordReview can
+  // log a visit against it on save. Cleared when the URL drops the param.
+  useEffect(() => {
+    setFollowingRouteId(followId ?? null);
+  }, [followId, setFollowingRouteId]);
 
   // 1Hz elapsed counter while recording.
   useEffect(() => {

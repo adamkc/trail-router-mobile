@@ -187,6 +187,8 @@ export const useLibrary = create<LibraryState>()(
             }
           }
         }
+        // Drop any visit-log entries for this route too.
+        import('./visits').then(({ useVisits }) => useVisits.getState().removeVisitsForRoute(id)).catch(() => {});
         set((s) => ({ routes: s.routes.filter((r) => r.id !== id) }));
       },
       replaceLibrary: (routes) => {

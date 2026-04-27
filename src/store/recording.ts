@@ -46,6 +46,10 @@ interface RecordingState {
   draftName: string;
   draftSaveStatus: SaveStatus;
   gps: GpsState;
+  /** Route the user is following (set by RecordScreen when `?follow=<id>` is
+   *  on the URL). RecordReview reads this to log a visit against the route. */
+  followingRouteId: string | null;
+  setFollowingRouteId: (id: string | null) => void;
 
   start: () => void;
   pause: () => void;
@@ -117,6 +121,7 @@ const initialState = () => ({
   draftName: `Recording — ${new Date().toISOString().slice(0, 10)}`,
   draftSaveStatus: 'draft' as SaveStatus,
   gps: 'unknown' as GpsState,
+  followingRouteId: null as string | null,
 });
 
 export const useRecording = create<RecordingState>((set) => ({
@@ -213,6 +218,7 @@ export const useRecording = create<RecordingState>((set) => ({
   discard: () => set(initialState()),
 
   setGpsState: (gps) => set({ gps }),
+  setFollowingRouteId: (followingRouteId) => set({ followingRouteId }),
   setDraftName: (draftName) => set({ draftName }),
   setDraftSaveStatus: (draftSaveStatus) => set({ draftSaveStatus }),
 

@@ -10,6 +10,9 @@ import { useLibrary, type LibraryRoute } from '../store/library';
 import type { ChipTone } from '../components/Chip';
 import { downloadString, serializeRoutesToGeoJson } from '../utils/geojson';
 import { routeChartData } from '../utils/elevation';
+import { WaypointPhoto } from '../components/WaypointPhoto';
+import { useActiveProject } from '../store/projects';
+import { buildNetwork } from '../utils/network';
 
 interface StatEntry {
   l: string;
@@ -105,6 +108,35 @@ export function RouteDetailsScreen() {
   const elevMax = Math.max(...chart);
   const accent = tagColor(route.tag);
   const peakIdx = chart.indexOf(elevMax);
+
+  // Connecting trails — derived from the live junction graph for the active
+  // project. Lists every other route this one shares a junction with so the
+  // user can hop. Cheap because buildNetwork memoizes well via useMemo.
+  const activeProject = useActiveProject();
+  const projectRoutes = useMemo(
+    () => routes.filter((r) => r.projectId === activeProject.id && r.geo.length >= 2),
+    [routes, activeProject.id],
+  );
+  const connectingRoutes = useMemo(() => {
+    if (!route || route.geo.length < 2) return [] as LibraryRoute[];
+    const net = buildNetwork(projectRoutes);
+    const myIdx = projectRoutes.findIndex((r) => r.id === route.id);
+    if (myIdx === -1) return [];
+    // Walk the junction set: any cross-route adjacency where one side is on
+    // me identifies a connecting route.
+    const connectedIdxs = new Set<number>();
+    for (const id of net.junctions) {
+      const node = net.nodes.get(id);
+      if (!node || node.routeIdx !== myIdx) continue;
+      for (const edge of net.adj.get(id) ?? []) {
+        const other = net.nodes.get(edge.to);
+        if (other && other.routeIdx !== myIdx) connectedIdxs.add(other.routeIdx);
+      }
+    }
+    return Array.from(connectedIdxs).map((i) => projectRoutes[i]).filter(Boolean);
+  }, [projectRoutes, route]);
+
+  const photoWaypoints = route.waypoints.filter((w) => w.photoId);
 
   return (
     <div className="screen">
@@ -226,6 +258,94 @@ export function RouteDetailsScreen() {
             </div>
           ))}
         </div>
+
+        {/* Photo strip — appears when at least one waypoint has a captured
+            photo. Tap a thumbnail to jump to the full waypoint list. */}
+        {photoWaypoints.length > 0 && (
+          <div
+            style={{
+              marginTop: 16,
+              padding: 14,
+              background: 'var(--surface)',
+              borderRadius: 16,
+              border: '1px solid var(--line-soft)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+              <div className="eyebrow">PHOTOS</div>
+              <button
+                type="button"
+                onClick={() => navigate(`/waypoints/${route.id}`)}
+                style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--moss)', letterSpacing: '0.08em' }}
+              >
+                ALL {route.waypoints.length} WAYPOINTS →
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+              {photoWaypoints.map((w) => (
+                <WaypointPhoto
+                  key={w.id}
+                  photoId={w.photoId!}
+                  size={64}
+                  alt={w.label}
+                  onClick={() => navigate(`/waypoints/${route.id}`)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Connecting trails — derived from the junction graph. Tap to jump
+            into another connected route's details. Hidden when the route is
+            isolated (no junctions to other trails in the project). */}
+        {connectingRoutes.length > 0 && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: 14,
+              background: 'var(--surface)',
+              borderRadius: 16,
+              border: '1px solid var(--line-soft)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+              <div className="eyebrow">CONNECTS TO</div>
+              <button
+                type="button"
+                onClick={() => navigate('/network-map')}
+                style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--moss)', letterSpacing: '0.08em' }}
+              >
+                NETWORK MAP →
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {connectingRoutes.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => navigate(`/details/${r.id}`)}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: 999,
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--line-soft)',
+                    color: 'var(--bone)',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11,
+                    letterSpacing: '0.04em',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span style={{ width: 8, height: 8, borderRadius: 4, background: tagColor(r.tag) }} />
+                  {r.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Elevation Profile */}
         <div

@@ -8,6 +8,7 @@ import { MapGeoLine } from '../components/MapGeoLine';
 import { MapPin, MapWaypoint, FitBoundsToCoords } from '../components/MapMarkers';
 import { MapToolStack } from '../components/MapToolStack';
 import { ElevChart } from '../components/ElevChart';
+import { WaypointPhoto } from '../components/WaypointPhoto';
 import { resolveCssVar } from '../utils/geo';
 import { routeChartData } from '../utils/elevation';
 import { useLibrary } from '../store/library';
@@ -195,6 +196,32 @@ export function MapViewerScreen() {
             color={accent}
           />
         </div>
+
+        {/* Photo strip — only renders when at least one waypoint has an
+            attached photo. Tap a thumbnail to jump to the waypoints view. */}
+        {route.waypoints.some((w) => w.photoId) && (
+          <div
+            style={{
+              display: 'flex',
+              gap: 6,
+              marginTop: 12,
+              overflowX: 'auto',
+              paddingBottom: 2,
+            }}
+          >
+            {route.waypoints
+              .filter((w) => w.photoId)
+              .map((w) => (
+                <WaypointPhoto
+                  key={w.id}
+                  photoId={w.photoId!}
+                  size={48}
+                  alt={w.label}
+                  onClick={() => navigate(`/waypoints/${route.id}`)}
+                />
+              ))}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
           <button type="button" className="btn btn-primary" style={{ flex: 1 }} onClick={() => navigate(`/details/${route.id}`)}>

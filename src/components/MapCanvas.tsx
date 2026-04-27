@@ -4,6 +4,7 @@ import { TopoMap } from './TopoMap';
 import { MapHillshade } from './MapHillshade';
 import { HAYFORK } from '../utils/geo';
 import { usePreferences } from '../store/preferences';
+import { useActiveProject } from '../store/projects';
 
 export interface MapCanvasProps {
   children?: ReactNode;
@@ -58,6 +59,7 @@ export function MapCanvas({
   const [styleLoaded, setStyleLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
   const hillshadeOn = usePreferences((s) => s.hillshadeOn);
+  const activeProject = useActiveProject();
 
   // Freeze initial params so the effect has stable [] deps and never re-initializes the map.
   const initial = useRef({ center, zoom, interactive });
@@ -119,7 +121,13 @@ export function MapCanvas({
         }}
       />
       <MapInstanceContext.Provider value={{ map, styleLoaded }}>
-        {hillshade && <MapHillshade enabled={hillshadeOn} />}
+        {hillshade && (
+          <MapHillshade
+            enabled={hillshadeOn}
+            projectId={activeProject.id}
+            bounds={activeProject.bounds}
+          />
+        )}
         {children}
       </MapInstanceContext.Provider>
     </div>

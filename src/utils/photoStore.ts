@@ -87,6 +87,44 @@ export async function deletePhoto(id: string): Promise<void> {
   }
 }
 
+// ─── Per-project hillshade blobs ───────────────────────────────────────────
+// Stored in the same `photos` IDB object store under namespaced keys so we
+// don't have to bump the DB version. Each project gets at most one
+// hillshade; saving overwrites.
+
+const hillshadeKey = (projectId: string) => `hs-${projectId}`;
+
+export async function saveHillshade(projectId: string, blob: Blob): Promise<void> {
+  return savePhoto(hillshadeKey(projectId), blob);
+}
+
+export async function loadHillshadeUrl(projectId: string): Promise<string | null> {
+  return loadPhotoUrl(hillshadeKey(projectId));
+}
+
+export async function deleteHillshade(projectId: string): Promise<void> {
+  return deletePhoto(hillshadeKey(projectId));
+}
+
+/** Open the OS file picker for an image and resolve with the chosen Blob. */
+export function pickImageFile(): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/jpeg,image/webp';
+    input.style.display = 'none';
+    input.onchange = () => {
+      const file = input.files?.[0];
+      resolve(file ?? null);
+    };
+    document.body.appendChild(input);
+    input.click();
+    setTimeout(() => {
+      try { document.body.removeChild(input); } catch { /* already removed */ }
+    }, 60_000);
+  });
+}
+
 /**
  * Open the OS camera (or photo picker on desktop) and resolve with the
  * captured Blob, or null if cancelled. Uses `capture="environment"` so

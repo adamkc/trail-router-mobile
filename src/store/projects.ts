@@ -39,6 +39,9 @@ interface ProjectsState {
   removeProject: (id: string) => void;
   /** Rename a project in place. No-op if id missing or name blank. */
   renameProject: (id: string, name: string, subtitle?: string) => void;
+  /** Patch arbitrary mutable fields on a project (e.g. hasHillshade). No-op
+   *  if the id doesn't exist. Used for things like attach/remove hillshade. */
+  updateProject: (id: string, patch: Partial<Omit<Project, 'id'>>) => void;
 }
 
 export const useProjects = create<ProjectsState>()(
@@ -78,6 +81,14 @@ export const useProjects = create<ProjectsState>()(
             name: trimmed,
             ...(subtitle !== undefined ? { subtitle: subtitle.trim() || next[idx].subtitle } : {}),
           };
+          return { projects: next };
+        }),
+      updateProject: (id, patch) =>
+        set((s) => {
+          const idx = s.projects.findIndex((p) => p.id === id);
+          if (idx === -1) return s;
+          const next = s.projects.slice();
+          next[idx] = { ...next[idx], ...patch, id: next[idx].id };
           return { projects: next };
         }),
     }),

@@ -1,32 +1,80 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import type { ImageSource } from 'maplibre-gl';
 import { useMapInstance } from './MapCanvas';
 import { HAYFORK_BOUNDS } from '../utils/geo';
+import { loadHillshadeUrl } from '../utils/photoStore';
+
+export interface HillshadeBounds {
+  west: number;
+  east: number;
+  south: number;
+  north: number;
+}
 
 interface MapHillshadeProps {
   /** When false, the layer is hidden (kept around so toggling is instant). */
   enabled?: boolean;
   /** 0..1 — defaults to a gentle 0.55 so it tints rather than dominates the basemap. */
   opacity?: number;
+  /** Project id whose hillshade should render. 'hayfork' loads the bundled
+   *  PNG; any other id looks up an IndexedDB blob saved via Settings. */
+  projectId?: string;
+  /** Geographic bounds the image is clipped to. Required for non-bundled
+   *  projects; defaults to HAYFORK_BOUNDS for the bundled case. */
+  bounds?: HillshadeBounds;
 }
 
-const SOURCE_ID = 'hayfork-hillshade';
-const LAYER_ID = 'hayfork-hillshade-layer';
+const SOURCE_ID = 'hillshade-source';
+const LAYER_ID = 'hillshade-layer';
+
+const BUNDLED_HAYFORK_URL = `${import.meta.env.BASE_URL ?? '/'}data/hayfork-hillshade.png`;
 
 /**
- * Adds the bundled pre-rendered Hayfork hillshade PNG to the parent map as
- * an `image` source clipped to its known geographic bounds. The image was
- * exported from the desktop trail-route-editor and stitched from SRTM 1-arc-sec
- * DEM, so it lines up naturally with the editor's GeoJSON trails.
+ * Renders a project's hillshade as a MapLibre `image` source clipped to the
+ * project's geographic bounds. The bundled Hayfork project ships with a
+ * pre-rendered SRTM hillshade PNG; user-imported projects can attach their
+ * own via Settings (stored as a Blob in IndexedDB).
+ *
+ * Resolves the source URL lazily — for IDB-backed hillshades the blob:URL
+ * is loaded on mount and revoked on unmount/projectId-change to keep
+ * memory bounded.
  */
-export function MapHillshade({ enabled = true, opacity = 0.55 }: MapHillshadeProps) {
+export function MapHillshade({
+  enabled = true,
+  opacity = 0.55,
+  projectId = 'hayfork',
+  bounds,
+}: MapHillshadeProps) {
   const { map, styleLoaded } = useMapInstance();
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(null);
 
-  // Add the source + layer once the style is loaded.
+  // Resolve the image URL — either the bundled PNG or an IDB blob.
   useEffect(() => {
-    if (!map || !styleLoaded) return;
+    let cancelled = false;
+    let createdUrl: string | null = null;
+    if (projectId === 'hayfork') {
+      setResolvedUrl(BUNDLED_HAYFORK_URL);
+      return () => { cancelled = true; };
+    }
+    loadHillshadeUrl(projectId).then((u) => {
+      if (cancelled) {
+        if (u) URL.revokeObjectURL(u);
+        return;
+      }
+      createdUrl = u;
+      setResolvedUrl(u);
+    });
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+      setResolvedUrl(null);
+    };
+  }, [projectId]);
 
-    const url = `${import.meta.env.BASE_URL ?? '/'}data/hayfork-hillshade.png`;
-    const { west, east, south, north } = HAYFORK_BOUNDS;
+  useEffect(() => {
+    if (!map || !styleLoaded || !resolvedUrl) return;
+    const box = bounds ?? HAYFORK_BOUNDS;
+    const { west, east, south, north } = box;
     // image source coords are [TL, TR, BR, BL] — clockwise from the top-left.
     const coordinates: [[number, number], [number, number], [number, number], [number, number]] = [
       [west, north],
@@ -36,7 +84,11 @@ export function MapHillshade({ enabled = true, opacity = 0.55 }: MapHillshadePro
     ];
 
     if (!map.getSource(SOURCE_ID)) {
-      map.addSource(SOURCE_ID, { type: 'image', url, coordinates });
+      map.addSource(SOURCE_ID, { type: 'image', url: resolvedUrl, coordinates });
+    } else {
+      // Source already exists from a prior project — swap the image + bbox.
+      const src = map.getSource(SOURCE_ID) as ImageSource;
+      src.updateImage({ url: resolvedUrl, coordinates });
     }
     if (!map.getLayer(LAYER_ID)) {
       map.addLayer(
@@ -64,7 +116,8 @@ export function MapHillshade({ enabled = true, opacity = 0.55 }: MapHillshadePro
         // map already torn down
       }
     };
-  }, [map, styleLoaded]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, styleLoaded, resolvedUrl, bounds?.west, bounds?.east, bounds?.south, bounds?.north]);
 
   // React to opacity / enabled changes by mutating paint property in place.
   useEffect(() => {

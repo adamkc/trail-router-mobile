@@ -16,6 +16,7 @@ import {
   serializeRoutesToGeoJson,
 } from '../utils/geojson';
 import { parseGpxRoutes, serializeRoutesToGpx } from '../utils/gpx';
+import { deleteHillshade, pickImageFile, saveHillshade } from '../utils/photoStore';
 import { backfillElevations, loadHayforkProject } from '../utils/hayforkData';
 
 export function SettingsScreen() {
@@ -27,11 +28,36 @@ export function SettingsScreen() {
   const projects = useProjects((s) => s.projects);
   const removeProject = useProjects((s) => s.removeProject);
   const renameProject = useProjects((s) => s.renameProject);
+  const updateProject = useProjects((s) => s.updateProject);
   const setActive = useProjects((s) => s.setActive);
   const projectRoutes = routes.filter((r) => r.projectId === activeProject.id);
 
   const canDeleteActive = activeProject.id !== 'hayfork';
 
+  const handleUploadHillshade = async () => {
+    if (activeProject.id === 'hayfork') {
+      setImportStatus('Hayfork uses the bundled hillshade — pick a different project to upload your own');
+      return;
+    }
+    setImportStatus(null);
+    try {
+      const blob = await pickImageFile();
+      if (!blob) return;
+      await saveHillshade(activeProject.id, blob);
+      updateProject(activeProject.id, { hasHillshade: true });
+      const sizeKb = (blob.size / 1024).toFixed(0);
+      setImportStatus(`Hillshade attached to "${activeProject.name}" · ${sizeKb} KB · clipped to project bounds`);
+    } catch (e) {
+      setImportStatus(`Hillshade upload failed: ${(e as Error).message}`);
+    }
+  };
+  const handleRemoveHillshade = async () => {
+    if (activeProject.id === 'hayfork') return;
+    if (!confirm(`Remove hillshade from "${activeProject.name}"?`)) return;
+    await deleteHillshade(activeProject.id);
+    updateProject(activeProject.id, { hasHillshade: false });
+    setImportStatus(`Hillshade removed from "${activeProject.name}"`);
+  };
   const handleRenameActiveProject = () => {
     const next = window.prompt(
       `Rename project "${activeProject.name}":`,
@@ -252,6 +278,28 @@ export function SettingsScreen() {
             sub="Edit the active project's display name + subtitle"
             onClick={handleRenameActiveProject}
           />
+          {activeProject.id !== 'hayfork' && (
+            <>
+              <Divider />
+              <NavRow
+                label={activeProject.hasHillshade ? 'Replace hillshade…' : 'Add hillshade…'}
+                sub={activeProject.hasHillshade
+                  ? 'Pick a new PNG; clipped to project bounds'
+                  : 'Attach a PNG (e.g. SRTM hillshade exported from QGIS) — clipped to project bounds'}
+                onClick={handleUploadHillshade}
+              />
+              {activeProject.hasHillshade && (
+                <>
+                  <Divider />
+                  <DangerRow
+                    label="Remove hillshade"
+                    sub="Drops the attached PNG; project still works without it"
+                    onClick={handleRemoveHillshade}
+                  />
+                </>
+              )}
+            </>
+          )}
           {canDeleteActive && (
             <>
               <Divider />

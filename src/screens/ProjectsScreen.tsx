@@ -9,6 +9,8 @@ import { useLibrary } from '../store/library';
 import { projectExtentsFromRoutes, useProjects } from '../store/projects';
 import { parseGeoJsonRoutes, pickJsonFile } from '../utils/geojson';
 import { parseGpxRoutes } from '../utils/gpx';
+import { haversineKm } from '../store/recording';
+import { buildNetwork } from '../utils/network';
 
 interface ProjectCardData {
   id: string;
@@ -24,6 +26,12 @@ interface ProjectCardData {
   optimized: number;
   updated: string;
   isActive: boolean;
+  /** Mean and max signed-grade across all trails (percent). 0/0 when no
+   *  per-vertex elevations are available (e.g. user-imported plain GeoJSON). */
+  avgGradePct: number;
+  maxGradePct: number;
+  /** Auto-detected junctions (cross-trail intersections within 25 m). */
+  junctions: number;
 }
 
 type Segment = 'ALL' | 'ACTIVE' | 'ARCHIVED';
@@ -77,13 +85,53 @@ export function ProjectsScreen() {
       const inProject = routes.filter((r) => r.projectId === p.id);
       let built = 0, draft = 0, optimized = 0;
       let kmSum = 0, gainSum = 0;
+      // Grade aggregation: roll a sliding ~50 m window across each route's
+      // (geo, elevations) and compute rise/run on that window. Per-vertex
+      // grades are noise — Open-Meteo gives one interpolated elevation per
+      // sample point, and trails sometimes have sub-meter vertex spacing,
+      // so dE/dRun on adjacent points blows up to nonsense (e.g. 326 %).
+      // Window-based grade is what humans/optimizers actually care about.
+      const WINDOW_M = 50;
+      let totalRiseAbs = 0;
+      let totalRunM = 0;
+      let maxAbsGrade = 0;
       for (const r of inProject) {
         if (r.status === 'built') built += 1;
         else if (r.status === 'draft') draft += 1;
         else if (r.status === 'optimized') optimized += 1;
         kmSum += parseFloat(r.km) || 0;
         gainSum += parseInt(r.gain.replace(/[^\d-]/g, ''), 10) || 0;
+        if (r.elevations.length === r.geo.length && r.elevations.length >= 2) {
+          // Cumulative meters from start so we can index windows by run.
+          const runCum: number[] = [0];
+          for (let i = 1; i < r.geo.length; i++) {
+            runCum.push(runCum[i - 1] + haversineKm(r.geo[i - 1], r.geo[i]) * 1000);
+          }
+          let j = 0;
+          for (let i = 1; i < r.geo.length; i++) {
+            // Advance the window's start until it's at least WINDOW_M behind i.
+            while (j < i && runCum[i] - runCum[j] > WINDOW_M) j++;
+            if (j > 0) j--;
+            const runM = runCum[i] - runCum[j];
+            if (runM < WINDOW_M * 0.5) continue;
+            const rise = r.elevations[i] - r.elevations[j];
+            totalRiseAbs += Math.abs(rise);
+            totalRunM += runM;
+            const segGrade = Math.abs(rise / runM) * 100;
+            // Defensive: cap at a plausible trail max (80 %). Above that is
+            // either bad elevation data or a cliff, neither is meaningful.
+            if (segGrade < 80 && segGrade > maxAbsGrade) maxAbsGrade = segGrade;
+          }
+        }
       }
+      const avgGradePct = totalRunM > 0 ? (totalRiseAbs / totalRunM) * 100 : 0;
+      // Junctions: build the routing graph for *this project's* trails.
+      // Cheap (~5 ms for the 10-trail Hayfork case) and only runs when the
+      // projects/routes selectors change, which is rare.
+      const routableInProject = inProject.filter((r) => r.geo.length >= 2);
+      const junctions = routableInProject.length >= 2
+        ? buildNetwork(routableInProject).junctions.size
+        : 0;
       const isActive = p.id === activeProjectId;
       return {
         id: p.id,
@@ -97,6 +145,9 @@ export function ProjectsScreen() {
         built, draft, optimized,
         updated: formatRelative(p.createdAt),
         isActive,
+        avgGradePct,
+        maxGradePct: maxAbsGrade,
+        junctions,
       };
     });
   }, [projects, routes, activeProjectId]);
@@ -480,6 +531,47 @@ function ProjectCard({ p, i, onOpen }: { p: ProjectCardData; i: number; onOpen: 
         </div>
         <Icon name="chevron-right" size={18} color="var(--moss)" />
       </div>
+
+      {/* Quick stats grid — derived from the live library + network graph. */}
+      {(p.avgGradePct > 0 || p.junctions > 0 || p.gain !== '+0') && (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: 6,
+            marginTop: 10,
+          }}
+        >
+          {[
+            { label: 'GAIN',     value: `${p.gain} m` },
+            { label: 'AVG GRD',  value: p.avgGradePct > 0  ? `${p.avgGradePct.toFixed(1)}%`  : '—' },
+            { label: 'MAX GRD',  value: p.maxGradePct > 0  ? `${p.maxGradePct.toFixed(0)}%`  : '—' },
+            { label: 'JCT',      value: p.junctions > 0    ? String(p.junctions)             : '—' },
+          ].map((s) => (
+            <div
+              key={s.label}
+              style={{
+                padding: '6px 8px',
+                borderRadius: 8,
+                background: 'var(--surface-2)',
+                border: '1px solid var(--line-soft)',
+              }}
+            >
+              <div className="stat-label" style={{ fontSize: 8 }}>{s.label}</div>
+              <div
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 12,
+                  color: 'var(--bone)',
+                  marginTop: 1,
+                }}
+              >
+                {s.value}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Status breakdown */}
       <div

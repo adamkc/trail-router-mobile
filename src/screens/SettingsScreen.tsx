@@ -17,6 +17,7 @@ import {
 } from '../utils/geojson';
 import { parseGpxRoutes, serializeRoutesToGpx } from '../utils/gpx';
 import { deleteHillshade, pickImageFile, saveHillshade } from '../utils/photoStore';
+import { exportBackup, formatSize, restoreBackup } from '../utils/backup';
 import { backfillElevations, loadHayforkProject } from '../utils/hayforkData';
 
 export function SettingsScreen() {
@@ -34,6 +35,34 @@ export function SettingsScreen() {
 
   const canDeleteActive = activeProject.id !== 'hayfork';
 
+  const handleBackupExport = async () => {
+    setImportStatus(null);
+    try {
+      const { filename, json, sizeBytes, counts } = await exportBackup();
+      downloadString(filename, 'application/json', json);
+      setImportStatus(
+        `Backup saved: ${formatSize(sizeBytes)} · ${counts.projects} projects · ${counts.routes} routes · ${counts.visits} visits · ${counts.blobs} photos/hillshades`,
+      );
+    } catch (e) {
+      setImportStatus(`Backup failed: ${(e as Error).message}`);
+    }
+  };
+  const handleBackupRestore = async () => {
+    setImportStatus(null);
+    try {
+      const file = await pickJsonFile('.json,application/json');
+      if (!file) return;
+      if (!confirm(
+        `Restore from "${file.name}"? This will REPLACE all current projects, routes, visits, and photos with the backup's contents.`,
+      )) return;
+      const summary = await restoreBackup(file.text);
+      setImportStatus(
+        `Restored ${summary.projects} projects · ${summary.routes} routes · ${summary.visits} visits · ${summary.blobs} photos/hillshades from ${file.name}`,
+      );
+    } catch (e) {
+      setImportStatus(`Restore failed: ${(e as Error).message}`);
+    }
+  };
   const handleUploadHillshade = async () => {
     if (activeProject.id === 'hayfork') {
       setImportStatus('Hayfork uses the bundled hillshade — pick a different project to upload your own');
@@ -343,6 +372,22 @@ export function SettingsScreen() {
             label="Clear saved routes"
             sub={`Removes all ${routes.length} entries from local storage`}
             onClick={handleClearLibrary}
+          />
+        </Card>
+
+        {/* Section: Backup — single-file local backup; no cloud, no server. */}
+        <SectionLabel>BACKUP</SectionLabel>
+        <Card>
+          <NavRow
+            label="Save backup file…"
+            sub="One JSON with everything: projects, routes, visits, photos, hillshades. Drop it in iCloud / Dropbox / OneDrive for cross-device sync via your own cloud."
+            onClick={handleBackupExport}
+          />
+          <Divider />
+          <NavRow
+            label="Restore from backup file…"
+            sub="Replaces all current data with the backup's contents. Confirm before applying."
+            onClick={handleBackupRestore}
           />
         </Card>
         {importStatus && (

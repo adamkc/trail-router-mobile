@@ -10,6 +10,7 @@ import { MapToolStack } from '../components/MapToolStack';
 import { ElevChart } from '../components/ElevChart';
 import { WaypointPhoto } from '../components/WaypointPhoto';
 import { PhotoLightbox } from '../components/PhotoLightbox';
+import { shareOrCopy, shareUrlForHash } from '../utils/share';
 import { resolveCssVar } from '../utils/geo';
 import { routeChartData } from '../utils/elevation';
 import { useLibrary } from '../store/library';
@@ -45,6 +46,20 @@ export function MapViewerScreen() {
   const end = trailGeo[trailGeo.length - 1];
   const accent = tagToCssColor(route.tag);
   const [openPhotoWp, setOpenPhotoWp] = useState<string | null>(null);
+  const [shareToast, setShareToast] = useState<string | null>(null);
+
+  const handleShare = async () => {
+    const url = shareUrlForHash(`/map/${route.id}`);
+    const result = await shareOrCopy({
+      title: route.name,
+      text: `${route.name} · ${route.km} km · ${route.gain} m gain`,
+      url,
+    });
+    if (result.action !== 'cancelled') {
+      setShareToast(result.message);
+      window.setTimeout(() => setShareToast(null), 2400);
+    }
+  };
   // Anchor camera + hillshade to whichever project owns this route. Falls
   // back to the active project's center if a route somehow lacks geo.
   const cameraCenter = trailGeo[0] ?? activeProject.center;
@@ -232,7 +247,7 @@ export function MapViewerScreen() {
           <button type="button" className="btn btn-ghost" onClick={() => navigate(`/editor/${route.id}`)} aria-label="Edit vertices">
             <Icon name="edit" size={16} />
           </button>
-          <button type="button" className="btn btn-ghost" aria-label="Share">
+          <button type="button" className="btn btn-ghost" aria-label="Share" onClick={handleShare}>
             <Icon name="share" size={16} />
           </button>
         </div>
@@ -249,6 +264,28 @@ export function MapViewerScreen() {
           />
         );
       })()}
+      {shareToast && (
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 80px)',
+            transform: 'translateX(-50%)',
+            padding: '10px 14px',
+            borderRadius: 12,
+            background: 'color-mix(in oklch, var(--bg) 92%, var(--blaze))',
+            border: '1px solid color-mix(in oklch, var(--blaze) 50%, transparent)',
+            color: 'var(--bone)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            letterSpacing: '0.06em',
+            zIndex: 10,
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          {shareToast}
+        </div>
+      )}
       <NavPill />
     </div>
   );

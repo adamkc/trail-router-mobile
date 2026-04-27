@@ -14,6 +14,7 @@ import { WaypointPhoto } from '../components/WaypointPhoto';
 import { PhotoLightbox } from '../components/PhotoLightbox';
 import { useActiveProject } from '../store/projects';
 import { buildNetwork } from '../utils/network';
+import { shareOrCopy, shareUrlForHash } from '../utils/share';
 
 interface StatEntry {
   l: string;
@@ -139,6 +140,20 @@ export function RouteDetailsScreen() {
 
   const photoWaypoints = route.waypoints.filter((w) => w.photoId);
   const [openPhotoWp, setOpenPhotoWp] = useState<string | null>(null);
+  const [shareToast, setShareToast] = useState<string | null>(null);
+
+  const handleShare = async () => {
+    const url = shareUrlForHash(`/map/${route.id}`);
+    const result = await shareOrCopy({
+      title: route.name,
+      text: `${route.name} · ${route.km} km · ${route.gain} m gain`,
+      url,
+    });
+    if (result.action !== 'cancelled') {
+      setShareToast(result.message);
+      window.setTimeout(() => setShareToast(null), 2400);
+    }
+  };
 
   return (
     <div className="screen">
@@ -485,8 +500,38 @@ export function RouteDetailsScreen() {
           >
             <Icon name="download" size={16} />
           </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={handleShare}
+            aria-label="Share route link"
+          >
+            <Icon name="share" size={16} />
+          </button>
         </div>
       </div>
+      {shareToast && (
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 20px)',
+            transform: 'translateX(-50%)',
+            padding: '10px 14px',
+            borderRadius: 12,
+            background: 'color-mix(in oklch, var(--bg) 92%, var(--blaze))',
+            border: '1px solid color-mix(in oklch, var(--blaze) 50%, transparent)',
+            color: 'var(--bone)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: 11,
+            letterSpacing: '0.06em',
+            zIndex: 10,
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          {shareToast}
+        </div>
+      )}
       {(() => {
         const w = openPhotoWp ? route.waypoints.find((x) => x.id === openPhotoWp) : null;
         return (

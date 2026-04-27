@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StatusBar } from '../components/StatusBar';
 import { NavPill } from '../components/NavPill';
-import { Icon, type IconName } from '../components/Icon';
+import { Icon } from '../components/Icon';
 import { MapCanvas } from '../components/MapCanvas';
 import { MapGeoLine } from '../components/MapGeoLine';
 import { MapGradeLine } from '../components/MapGradeLine';
@@ -15,7 +15,7 @@ import {
   MapClickHandler,
   FitBoundsToCoords,
 } from '../components/MapMarkers';
-import { svgArrayToGeo, svgToGeo, resolveCssVar, HAYFORK } from '../utils/geo';
+import { svgArrayToGeo, svgToGeo, resolveCssVar } from '../utils/geo';
 import { useLibrary, type LibraryRoute } from '../store/library';
 import { useActiveProject } from '../store/projects';
 import { useRecording, haversineKm } from '../store/recording';

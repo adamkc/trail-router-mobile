@@ -127,7 +127,10 @@ function syntheticGeoFor(name: string, segments = 12): Array<[number, number]> {
   return pts;
 }
 
-const SEED_BASE: Array<Omit<LibraryRoute, 'geo' | 'waypoints'>> = [
+/** SEED_BASE entries declare the static fields; geo/elevations/waypoints/
+ *  projectId are filled in by the SEED.map below so the data here stays
+ *  readable. */
+const SEED_BASE: Array<Omit<LibraryRoute, 'geo' | 'waypoints' | 'elevations' | 'projectId'>> = [
   { id: 'hayfork-loop',            name: 'Hayfork Loop',          km: '14.2', gain: '+640', grade: '6.1',  status: 'optimized', tag: 'blaze', spark: [420, 430, 480, 520, 580, 610, 640, 620, 560, 500, 440, 420] },
   { id: 'north-ridge-traverse',    name: 'North Ridge Traverse',  km: '8.7',  gain: '+390', grade: '7.4',  status: 'draft',     tag: null,    spark: [300, 320, 340, 380, 420, 440, 460, 450, 430, 400] },
   { id: 'clear-creek-connector',   name: 'Clear Creek Connector', km: '5.3',  gain: '+180', grade: '4.2',  status: 'built',     tag: 'good',  spark: [280, 290, 310, 330, 350, 360, 370, 370, 365, 355] },

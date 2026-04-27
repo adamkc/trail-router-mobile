@@ -125,25 +125,21 @@ export function nearestNode(
   coord: [number, number],
   maxDistM = 200,
 ): { id: string; node: NetworkNode; distM: number } | null {
-  const bx = Math.floor(coord[0] / BUCKET_SIZE);
-  const by = Math.floor(coord[1] / BUCKET_SIZE);
-  // Two-stage scan: try the immediate 3×3 neighborhood first (covers the
-  // common case of taps near the network); fall back to a full scan only
-  // when nothing close is found.
+  // Linear scan over all graph nodes. With ~2.5k nodes for the bundled
+  // Hayfork data and one call per tap, the cost is negligible (~0.5 ms);
+  // a spatial index would only matter at 10× scale or higher per-tap
+  // frequency.
   let bestId = '';
   let bestNode: NetworkNode | null = null;
   let bestDist = Infinity;
-  const consider = (n: NetworkNode) => {
+  for (const n of net.nodes.values()) {
     const d = haversineKm(coord, n.coord) * 1000;
     if (d < bestDist) {
       bestDist = d;
       bestId = n.id;
       bestNode = n;
     }
-  };
-  // Bucket lookup needs the same buckets buildNetwork built — recompute
-  // locally so this function stays a pure utility on (graph, coord).
-  for (const n of net.nodes.values()) consider(n);
+  }
   if (!bestNode || bestDist > maxDistM) return null;
   return { id: bestId, node: bestNode, distM: bestDist };
 }

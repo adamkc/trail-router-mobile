@@ -16,7 +16,13 @@ import {
   serializeRoutesToGeoJson,
 } from '../utils/geojson';
 import { parseGpxRoutes, serializeRoutesToGpx } from '../utils/gpx';
-import { deleteHillshade, pickImageFile, saveHillshade } from '../utils/photoStore';
+import {
+  blobStorageBytes,
+  clearBlobsByPrefix,
+  deleteHillshade,
+  pickImageFile,
+  saveHillshade,
+} from '../utils/photoStore';
 import { exportBackup, formatSize, restoreBackup } from '../utils/backup';
 import {
   disableSync,
@@ -130,6 +136,16 @@ export function SettingsScreen() {
   const setLastSyncedAt = usePreferences((s) => s.setLastSyncedAt);
   const [syncFolder, setSyncFolder] = useState<string | null>(null);
   const syncSupported = isSyncSupported();
+  const [photoUsage, setPhotoUsage] = useState<{ count: number; bytes: number } | null>(null);
+
+  // One-shot photo storage scan on mount; refreshes after clear actions
+  // so the row reflects what actually changed.
+  const refreshPhotoUsage = () => {
+    blobStorageBytes('ph-').then(setPhotoUsage).catch(() => setPhotoUsage(null));
+  };
+  useEffect(() => {
+    refreshPhotoUsage();
+  }, []);
 
   // Hydrate the saved folder name on mount so the Settings row reflects
   // reality without forcing the user to re-pick.
@@ -180,6 +196,40 @@ export function SettingsScreen() {
     } catch (e) {
       setImportStatus(`Restore failed: ${(e as Error).message}`);
     }
+  };
+  const handleClearPhotos = async () => {
+    if (!confirm(
+      'Delete every photo waypoint blob?\n\nWaypoints stay in their routes (label, type, location), but their attached photos are removed permanently. This is irreversible.',
+    )) return;
+    const removed = await clearBlobsByPrefix('ph-');
+    // Strip photoId references off every waypoint so the UI stops trying
+    // to load missing blobs.
+    const lib = useLibrary.getState();
+    lib.replaceLibrary(
+      lib.routes.map((r) => ({
+        ...r,
+        waypoints: r.waypoints.map((w) => ({ ...w, photoId: undefined })),
+      })),
+    );
+    refreshPhotoUsage();
+    setImportStatus(`Cleared ${removed} photo blob${removed === 1 ? '' : 's'}.`);
+  };
+  const handleClearAllData = async () => {
+    if (!confirm(
+      'NUKE ALL LOCAL DATA?\n\nDeletes: every project, route, waypoint, visit, photo, attached hillshade, and preference. The bundled Hayfork project will reload on next launch.\n\nThis CANNOT be undone. Backup first via "Save backup file…" if you might want any of it back.',
+    )) return;
+    if (!confirm('Are you absolutely sure?')) return;
+    // Drop every IDB blob (photos + hillshades + sync folder handle).
+    await clearBlobsByPrefix('');
+    try {
+      indexedDB.deleteDatabase('trail-router-sync');
+    } catch { /* sync DB may not exist */ }
+    // Clear the four persisted zustand stores.
+    localStorage.removeItem('trail-router-library');
+    localStorage.removeItem('trail-router-projects');
+    localStorage.removeItem('trail-router-visits');
+    localStorage.removeItem('trail-router-preferences');
+    location.reload();
   };
   const handleDisableSync = async () => {
     await disableSync();
@@ -460,6 +510,28 @@ export function SettingsScreen() {
             label="Restore from backup file…"
             sub="Replaces all current data with the backup's contents. Confirm before applying."
             onClick={handleBackupRestore}
+          />
+        </Card>
+
+        {/* Section: Storage — surfaces blob byte counts and offers nuclear
+            options for users running low on space. */}
+        <SectionLabel>STORAGE</SectionLabel>
+        <Card>
+          <ReadOnlyRow
+            label="Photo waypoints"
+            value={photoUsage ? `${photoUsage.count} · ${formatSize(photoUsage.bytes)}` : '—'}
+          />
+          <Divider />
+          <DangerRow
+            label="Clear photos"
+            sub="Deletes every captured photo blob; keeps the waypoints themselves"
+            onClick={handleClearPhotos}
+          />
+          <Divider />
+          <DangerRow
+            label="Clear ALL local data"
+            sub="Wipes projects, routes, visits, photos, hillshades, and preferences. Hayfork reloads on next launch."
+            onClick={handleClearAllData}
           />
         </Card>
 

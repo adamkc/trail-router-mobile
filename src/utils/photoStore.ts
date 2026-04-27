@@ -87,6 +87,42 @@ export async function deletePhoto(id: string): Promise<void> {
   }
 }
 
+/** List every blob id in the store (photos + hillshades). Cheap — just a
+ *  cursor scan over the keys, no blob bytes are read. */
+export async function listAllBlobIds(): Promise<string[]> {
+  try {
+    const store = await tx('readonly');
+    return await new Promise((resolve, reject) => {
+      const req = store.getAllKeys();
+      req.onsuccess = () => resolve((req.result ?? []) as string[]);
+      req.onerror = () => reject(req.error ?? new Error('IDB getAllKeys failed'));
+    });
+  } catch {
+    return [];
+  }
+}
+
+/** Aggregate total bytes used by all stored blobs. Optional `prefix` filter
+ *  ("ph-" for photos only, "hs-" for hillshades). */
+export async function blobStorageBytes(prefix = ''): Promise<{ count: number; bytes: number }> {
+  const ids = await listAllBlobIds();
+  const matching = prefix ? ids.filter((id) => id.startsWith(prefix)) : ids;
+  let bytes = 0;
+  for (const id of matching) {
+    const blob = await loadPhotoBlob(id);
+    if (blob) bytes += blob.size;
+  }
+  return { count: matching.length, bytes };
+}
+
+/** Drop every blob whose key matches the prefix. */
+export async function clearBlobsByPrefix(prefix: string): Promise<number> {
+  const ids = await listAllBlobIds();
+  const targets = ids.filter((id) => id.startsWith(prefix));
+  for (const id of targets) await deletePhoto(id);
+  return targets.length;
+}
+
 // ─── Per-project hillshade blobs ───────────────────────────────────────────
 // Stored in the same `photos` IDB object store under namespaced keys so we
 // don't have to bump the DB version. Each project gets at most one
